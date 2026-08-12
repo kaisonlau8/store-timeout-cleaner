@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>门店超时提醒机器人统计控制台</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>门店超时提醒机器人统计控制台</h1>
+            <p class="subtitle">
+                {% if data %}
+                    数据更新时间：{{ data.updated_at }}
+                {% else %}
+                    暂无数据，请前往解析页面上传文件
+                {% endif %}
+            </p>
+        </header>
+
+        {% if not has_data %}
+        <div class="no-data">
+            <div class="no-data-icon">📊</div>
+            <h2>暂无统计数据</h2>
+            <p>点击下方按钮前往解析页面，上传全量群清单和筛选群清单</p>
+            <a href="/parse" class="analyze-btn" style="display:inline-block;text-decoration:none;text-align:center;">前往解析页面</a>
+        </div>
+        {% else %}
+        <div class="results">
+            <div class="summary-cards">
+                <div class="card">
+                    <h4>全量群清单</h4>
+                    <div class="stat-row">
+                        <span class="label">总行数</span>
+                        <span class="value">{{ data.summary.all_total }}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="label">有效数据</span>
+                        <span class="value">{{ data.summary.all_valid }}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="label">无效/空数据</span>
+                        <span class="value">{{ data.summary.all_invalid }}</span>
+                    </div>
+                </div>
+                <div class="card">
+                    <h4>筛选群清单</h4>
+                    <div class="stat-row">
+                        <span class="label">总行数</span>
+                        <span class="value">{{ data.summary.filter_total }}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="label">有效数据</span>
+                        <span class="value">{{ data.summary.filter_valid }}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="label">无效/空数据</span>
+                        <span class="value">{{ data.summary.filter_invalid }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="global-export">
+                <a class="export-link" href="/api/export-all">导出总表 CSV（序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数）</a>
+            </div>
+
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="national">全国统计</button>
+                <button class="tab-btn" data-tab="after-may1">2026年5月1日后</button>
+                <button class="tab-btn" data-tab="monthly">按月统计</button>
+            </div>
+
+            <div class="tab-content active" id="tab-national">
+                <div class="stats-grid">
+                    <div class="stat-block">
+                        <h3>全量用户群</h3>
+                        <div class="big-number">{{ data.stats.national.all.group_count }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ data.stats.national.all.store_count }}</strong> 家门店</div>
+                        <div class="export-row">
+                            <a class="export-link" href="/api/export?scope=national&dataset=all">导出各店群数量 CSV</a>
+                        </div>
+                        <details class="store-details">
+                            <summary>查看各店群数量</summary>
+                            <div class="store-table-wrapper">
+                                <table class="store-table">
+                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <tbody>
+                                    {% for store, count in data.stats.national.all.store_stats.items() %}
+                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="stat-block">
+                        <h3>已拉超时提醒机器人</h3>
+                        <div class="big-number">{{ data.stats.national.filter.group_count }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ data.stats.national.filter.store_count }}</strong> 家门店</div>
+                        <div class="export-row">
+                            <a class="export-link" href="/api/export?scope=national&dataset=filter">导出各店群数量 CSV</a>
+                        </div>
+                        <details class="store-details">
+                            <summary>查看各店群数量</summary>
+                            <div class="store-table-wrapper">
+                                <table class="store-table">
+                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <tbody>
+                                    {% for store, count in data.stats.national.filter.store_stats.items() %}
+                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-after-may1">
+                <div class="stats-grid">
+                    <div class="stat-block">
+                        <h3>全量用户群（2026-05-01后新建）</h3>
+                        <div class="big-number">{{ data.stats.after_may1.all.group_count }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ data.stats.after_may1.all.store_count }}</strong> 家门店</div>
+                        <div class="export-row">
+                            <a class="export-link" href="/api/export?scope=after_may1&dataset=all">导出各店群数量 CSV</a>
+                        </div>
+                        <details class="store-details">
+                            <summary>查看各店群数量</summary>
+                            <div class="store-table-wrapper">
+                                <table class="store-table">
+                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <tbody>
+                                    {% for store, count in data.stats.after_may1.all.store_stats.items() %}
+                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="stat-block">
+                        <h3>已拉超时提醒机器人（2026-05-01后新建）</h3>
+                        <div class="big-number">{{ data.stats.after_may1.filter.group_count }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ data.stats.after_may1.filter.store_count }}</strong> 家门店</div>
+                        <div class="export-row">
+                            <a class="export-link" href="/api/export?scope=after_may1&dataset=filter">导出各店群数量 CSV</a>
+                        </div>
+                        <details class="store-details">
+                            <summary>查看各店群数量</summary>
+                            <div class="store-table-wrapper">
+                                <table class="store-table">
+                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <tbody>
+                                    {% for store, count in data.stats.after_may1.filter.store_stats.items() %}
+                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
+                                    {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-monthly">
+                <div class="month-selector">
+                    <div class="selector-group">
+                        <label>年份</label>
+                        <div class="custom-select" id="year-select-wrap">
+                            <div class="select-trigger" data-value="{{ data.stats.monthly.years[-1] }}">{{ data.stats.monthly.years[-1] }}</div>
+                            <div class="select-options">
+                                {% for y in data.stats.monthly.years %}
+                                <div class="select-option" data-value="{{ y }}">{{ y }}</div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="selector-group">
+                        <label>月份</label>
+                        <div class="custom-select" id="month-select-wrap">
+                            <div class="select-trigger" data-value="06">06月</div>
+                            <div class="select-options">
+                                <div class="select-option" data-value="01">01月</div>
+                                <div class="select-option" data-value="02">02月</div>
+                                <div class="select-option" data-value="03">03月</div>
+                                <div class="select-option" data-value="04">04月</div>
+                                <div class="select-option" data-value="05">05月</div>
+                                <div class="select-option" data-value="06">06月</div>
+                                <div class="select-option" data-value="07">07月</div>
+                                <div class="select-option" data-value="08">08月</div>
+                                <div class="select-option" data-value="09">09月</div>
+                                <div class="select-option" data-value="10">10月</div>
+                                <div class="select-option" data-value="11">11月</div>
+                                <div class="select-option" data-value="12">12月</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="filter-btn" id="filter-month-btn">筛选</button>
+                </div>
+
+                <div id="monthly-result">
+                    <div class="month-compare" id="month-compare-display">
+                        <h3 class="month-title" id="compare-title">请选择年月并点击筛选</h3>
+                        <div class="stats-grid" id="compare-grid"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align:center;margin-top:32px;">
+            <a href="/parse" class="analyze-btn" style="display:inline-block;text-decoration:none;text-align:center;max-width:300px;">更新数据 / 重新解析</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        window.MONTHLY_DATA = {{ data.stats.monthly.data | tojson }};
+        window.MONTHLY_MONTHS = {{ data.stats.monthly.months | tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='js/display.js') }}?v=3"></script>
+</body>
+</html>
