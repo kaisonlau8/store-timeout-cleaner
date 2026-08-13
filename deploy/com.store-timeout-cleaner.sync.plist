@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.store-timeout-cleaner.sync</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/i/myCode/m-hero/store-timeout-cleaner/venv/bin/python</string>
+		<string>/Users/i/myCode/m-hero/store-timeout-cleaner/scripts/sync_scrm.py</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/i/myCode/m-hero/store-timeout-cleaner</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TZ</key>
+		<string>Asia/Shanghai</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>0</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>12</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
+	<key>StandardOutPath</key>
+	<string>/Users/i/Library/Logs/com.store-timeout-cleaner.sync.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/i/Library/Logs/com.store-timeout-cleaner.sync.err.log</string>
+</dict>
+</plist>

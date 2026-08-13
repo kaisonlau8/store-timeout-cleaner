@@ -12,25 +12,28 @@
             <h1>门店超时提醒机器人统计控制台</h1>
             <p class="subtitle">
                 {% if data %}
-                    数据更新时间：{{ data.updated_at }}
+                    数据更新时间：{{ data.updated_at }}{% if data.summary.source %} · 来源 {{ data.summary.source }}{% endif %} · 每天 00:00 / 12:00 自动同步
                 {% else %}
-                    暂无数据，请前往解析页面上传文件
+                    每天 00:00 / 12:00 从企微 SCRM 自动同步
                 {% endif %}
             </p>
         </header>
+        <nav class="page-nav">
+            <a class="page-nav-link active" href="/">拉群覆盖</a>
+            <a class="page-nav-link" href="/timeout">超时提醒</a>
+        </nav>
 
         {% if not has_data %}
         <div class="no-data">
             <div class="no-data-icon">📊</div>
             <h2>暂无统计数据</h2>
-            <p>点击下方按钮前往解析页面，上传全量群清单和筛选群清单</p>
-            <a href="/parse" class="analyze-btn" style="display:inline-block;text-decoration:none;text-align:center;">前往解析页面</a>
+            <p>等待定时同步（每天 00:00 / 12:00 从企微 SCRM 全量拉取）</p>
         </div>
         {% else %}
         <div class="results">
             <div class="summary-cards">
                 <div class="card">
-                    <h4>全量群清单</h4>
+                    <h4>全量客户群（SCRM）</h4>
                     <div class="stat-row">
                         <span class="label">总行数</span>
                         <span class="value">{{ data.summary.all_total }}</span>
@@ -45,7 +48,17 @@
                     </div>
                 </div>
                 <div class="card">
-                    <h4>筛选群清单</h4>
+                    <h4>已拉超时提醒机器人</h4>
+                    {% if data.summary.robots %}
+                    <div class="stat-row">
+                        <span class="label">账号</span>
+                        <span class="value">
+                            {% for r in data.summary.robots %}
+                                {{ r.username }}（{{ r.group_count }}）{% if not loop.last %}、{% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+                    {% endif %}
                     <div class="stat-row">
                         <span class="label">总行数</span>
                         <span class="value">{{ data.summary.filter_total }}</span>
@@ -209,17 +222,15 @@
                 </div>
             </div>
         </div>
-
-        <div style="text-align:center;margin-top:32px;">
-            <a href="/parse" class="analyze-btn" style="display:inline-block;text-decoration:none;text-align:center;max-width:300px;">更新数据 / 重新解析</a>
-        </div>
         {% endif %}
     </div>
 
+    {% if has_data %}
     <script>
         window.MONTHLY_DATA = {{ data.stats.monthly.data | tojson }};
         window.MONTHLY_MONTHS = {{ data.stats.monthly.months | tojson }};
     </script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/display.js') }}?v=3"></script>
 </body>
 </html>

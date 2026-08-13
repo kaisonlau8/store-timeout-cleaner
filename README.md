@@ -1,14 +1,15 @@
 # 门店超时提醒机器人统计控制台
 
-解析门店超时提醒机器人相关导出数据，统计「已拉超时提醒机器人」等指标，提供 Web 控制台查看与 CSV 导出。
+从企微 SCRM 生产 OpenAPI 拉取客户群，统计「已拉超时提醒机器人」覆盖；超时提醒次数来自管家后台导出的「回复超时记录」Excel。
 
-> 归属猛士服务运营工具集。总文档地图与依赖关系见 [m-hero](https://github.com/kaisonlau8/m-hero)。
+> 归属猛士服务运营工具集。总文档地图与依赖关系见 [m-hero](https://github.com/kaisonlau8/m-hero)。接口说明见 [scrm-api](https://github.com/kaisonlau8/scrm-api)。
 
 ## 入口
 
 | 项 | 值 |
 |----|-----|
-| 本地 | `http://127.0.0.1:5001` |
+| 拉群覆盖 | `http://127.0.0.1:5001/` |
+| 超时提醒 | `http://127.0.0.1:5001/timeout` |
 | Tunnel | `store-timeout-cleaner` → `:5001`（hostname 仅写本机 cloudflared） |
 
 本服务**不爬取 DMS**，也不使用共享 Chromium 会话。
@@ -19,27 +20,62 @@
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env   # 填入与 scrm-api 相同的生产凭证
 python app.py
 ```
 
-浏览器打开 http://127.0.0.1:5001 。
+浏览器打开 http://127.0.0.1:5001 。拉群覆盖由 launchd 每天 **00:00 / 12:00**（北京时间）从 SCRM 同步。超时提醒把管家导出放到 `input_file/` 或在控制台上传。
+
+未单独配置 `.env` 时，会回读同级 `scrm-api/.env`。
+
+## 数据口径
+
+| 集合 | 来源 |
+|------|------|
+| 全量客户群 | `GET /openapi/chat/group/list` |
+| 已拉机器人 | 同上，群成员含刘明轩（`user_type=1`） |
+| 门店 | 群主主部门路径中以「猛士」开头的一段 |
+| 战区 | 部门路径里「门店」的下一段（如武汉特区、华北战区） |
+| 超时提醒 | 管家「回复超时记录」Excel |
+
+机器人账号只认刘明轩：`.env` 的 `SCRM_ROBOT_USERIDS=25738`（或 `SCRM_ROBOT_USERNAME=刘明轩`）。
+
+### 超时提醒统计
+
+OpenAPI 没有超时记录查询接口。使用管家导出的 Excel：
+
+1. 文件名必须带时间范围，例如 `导出时间范围20260701-20260731回复超时记录.xlsx`
+2. 导入时按该区间**整段覆盖**并登记（文件、起止日、行数、未归店数）
+3. 用「所在会话」对上 SCRM 群名，归到门店 / 战区；对不上的记入未归店（含「未知群聊」）
+4. 消息数按触发时间 + 群名 + 消息内容去重；规则次数按「触发超时规则」各计一次
+
+曲线图可按全国 / 战区 / 门店筛选，粒度支持日、月、季。
+
+```bash
+# 扫描 input_file/ 并导入
+venv/bin/python scripts/sync_timeout.py
+```
+
+导出文件含客户消息，**不要提交** `input_file/`。
 
 ## 功能概要
 
-- 上传 / 解析超时提醒相关 Excel
-- 控制台展示汇总与明细（含 2026-05-01 后新建等口径）
-- CSV 导出（单表 / 总表）
+- 每天 00:00 / 12:00 从 SCRM 同步客户群覆盖（供超时记录归店）
+- 控制台：拉群覆盖 + 超时 Excel 导入 / 曲线 / 门店明细
+- CSV 导出（覆盖总表 / 超时门店表）
 
-数据文件：
+数据文件（本地，默认不提交）：
 
 | 路径 | 说明 |
 |------|------|
-| `data.json` | 最近一次统计结果（本地，默认不提交） |
-| `uploads/` | 上传原始文件（本地，默认不提交） |
+| `data.json` | 最近一次拉群覆盖统计 |
+| `timeout.db` | 超时事件与导出登记 |
+| `input_file/` | 管家导出的 Excel |
 
 ## 部署
 
-launchd：`com.store-timeout-cleaner.web`  
+launchd：`com.store-timeout-cleaner.web`（控制台）、`com.store-timeout-cleaner.sync`（每天 00:00 / 12:00 同步拉群覆盖）  
+plist：`deploy/com.store-timeout-cleaner.sync.plist`  
 WorkingDirectory：本仓库根目录；Cloudflare Tunnel：`com.cloudflare.cloudflared.store-timeout-cleaner`。
 
 黄页本地入口：`http://127.0.0.1:9004`

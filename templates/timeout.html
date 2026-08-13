@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>超时提醒统计</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>门店超时提醒机器人统计控制台</h1>
+            <p class="subtitle" id="updated-at">导入管家「回复超时记录」Excel，按文件名时间范围登记</p>
+        </header>
+        <nav class="page-nav">
+            <a class="page-nav-link" href="/">拉群覆盖</a>
+            <a class="page-nav-link active" href="/timeout">超时提醒</a>
+        </nav>
+
+        <div class="stat-block import-panel">
+            <div class="table-head">
+                <h3>导出登记</h3>
+                <label class="export-link import-upload">
+                    上传 Excel
+                    <input type="file" id="excel-file" accept=".xlsx,.xls" hidden>
+                </label>
+            </div>
+            <p class="chart-hint">文件名需带时间范围，例如 <code>导出时间范围20260701-20260731回复超时记录.xlsx</code>。放入 <code>input_file/</code> 或在此上传，同一区间会覆盖重导。</p>
+            <p class="error-msg" id="import-error" hidden></p>
+            <div class="store-table-wrapper">
+                <table class="store-table" id="import-table">
+                    <thead>
+                        <tr><th>时间范围</th><th>文件</th><th>行数</th><th>计入</th><th>未归店</th><th>导入时间</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;color:#909399">尚未导入</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="month-selector timeout-filters">
+            <div class="selector-group">
+                <label>战区</label>
+                <select id="theater-select">
+                    <option value="">全国 / 全部战区</option>
+                </select>
+            </div>
+            <div class="selector-group">
+                <label>门店</label>
+                <input id="store-input" list="store-list" placeholder="全部或输入店名" autocomplete="off">
+                <datalist id="store-list"></datalist>
+            </div>
+            <div class="selector-group">
+                <label>粒度</label>
+                <div class="grain-pills">
+                    <label class="toggle-btn"><input type="radio" name="grain" value="day"> 日</label>
+                    <label class="toggle-btn active"><input type="radio" name="grain" value="month" checked> 月</label>
+                    <label class="toggle-btn"><input type="radio" name="grain" value="quarter"> 季</label>
+                </div>
+            </div>
+            <div class="selector-group">
+                <label>开始</label>
+                <input type="date" id="start-date" value="2026-05-01">
+            </div>
+            <div class="selector-group">
+                <label>结束</label>
+                <input type="date" id="end-date">
+            </div>
+            <button class="filter-btn" id="filter-btn" type="button">查询</button>
+        </div>
+
+        <div class="summary-cards" id="total-cards"></div>
+        <div class="summary-cards rule-cards" id="rule-cards"></div>
+
+        <div class="chart-card">
+            <h3>超时提醒趋势</h3>
+            <p class="chart-hint">实线为计入超时的客户消息数；虚线为各规则触发次数。数据来自管家导出。</p>
+            <div class="chart-wrap">
+                <canvas id="timeout-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="stat-block store-block">
+            <div class="table-head">
+                <h3>门店明细</h3>
+                <a class="export-link" id="export-link" href="/api/timeout/export">导出 CSV</a>
+            </div>
+            <div class="store-table-wrapper timeout-table-wrap">
+                <table class="store-table" id="store-table">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=2"></script>
+</body>
+</html>

@@ -4,7 +4,14 @@ __pycache__/
 .DS_Store
 *.log
 uploads/
+input_file/*
+!input_file/.gitkeep
 data.json
+data.json.tmp
+.sync.lock
+timeout.db
+timeout.db-wal
+timeout.db-shm
 .env
 .idea/
 .vscode/

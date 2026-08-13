@@ -1,368 +1,387 @@
-import os
-import re
 import csv
+import fcntl
 import io
 import json
-import zipfile
-import tempfile
-import shutil
+import logging
+import os
+import threading
 from datetime import datetime
 from urllib.parse import quote
-from flask import Flask, render_template, request, jsonify, redirect, Response
-import pandas as pd
-from dateutil import parser as date_parser
+from zoneinfo import ZoneInfo
 
+from flask import Flask, Response, jsonify, redirect, render_template, request
+
+from scrm_client import ScrmError
+from scrm_sync import sync_from_scrm
+from timeout_excel import ExcelImportError, import_excel_file, parse_filename_range, scan_input_dir
+from timeout_query import query_chart, query_meta
+from timeout_store import connect, replace_context
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
-DATA_FILE = 'data.json'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
+DATA_FILE = os.path.join(ROOT, "data.json")
+LOCK_FILE = os.path.join(ROOT, ".sync.lock")
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+CUTOFF_DATE = datetime(2026, 5, 1, tzinfo=SHANGHAI)
+_SYNC_LOCK = threading.Lock()
 
-CUTOFF_DATE = datetime(2026, 5, 1)
+
+def _acquire_sync_lock():
+    if not _SYNC_LOCK.acquire(blocking=False):
+        raise ScrmError("正在同步，请稍候")
+    lock_fh = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_fh.close()
+        _SYNC_LOCK.release()
+        raise ScrmError("正在同步，请稍候")
+    return lock_fh
+
+
+def _release_sync_lock(lock_fh):
+    fcntl.flock(lock_fh, fcntl.LOCK_UN)
+    lock_fh.close()
+    _SYNC_LOCK.release()
 
 
 def save_data(stats, summary):
-    """保存统计结果到 JSON 文件"""
     data = {
-        'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'stats': stats,
-        'summary': summary,
+        "updated_at": datetime.now(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S"),
+        "stats": stats,
+        "summary": summary,
     }
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+    tmp = DATA_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, DATA_FILE)
+
+
+def _save_group_context(result: dict) -> None:
+    conn = connect(os.path.join(ROOT, "timeout.db"))
+    try:
+        replace_context(
+            conn,
+            robot_chat_ids=result.get("robot_chat_ids") or [],
+            employee_ids=result.get("employee_ids") or [],
+            group_rows=result.get("all_rows") or [],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _run_group_and_timeout():
+    result = sync_from_scrm(ROOT)
+    stats = compute_stats(result["all_rows"], result["filter_rows"])
+    summary = result["summary"]
+    try:
+        _save_group_context(result)
+    except Exception:
+        logging.exception("保存群-门店映射失败，拉群覆盖数据仍会保存")
+    save_data(stats, summary)
+    return summary
+
+
+def run_sync():
+    lock_fh = _acquire_sync_lock()
+    try:
+        return _run_group_and_timeout()
+    finally:
+        _release_sync_lock(lock_fh)
+
+
+def run_timeout_sync():
+    lock_fh = _acquire_sync_lock()
+    try:
+        return scan_input_dir(ROOT)
+    finally:
+        _release_sync_lock(lock_fh)
 
 
 def load_data():
-    """从 JSON 文件加载统计结果"""
     if not os.path.exists(DATA_FILE):
         return None
-    with open(DATA_FILE, 'r', encoding='utf-8') as f:
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def extract_store(dept_str):
-    """从部门字符串中提取店名"""
-    if not isinstance(dept_str, str) or not dept_str.strip():
+def parse_ct(row):
+    ct = row.get("create_time")
+    if not ct:
         return None
-    parts = [p.strip() for p in dept_str.split('/') if p.strip()]
-    # 排除最后一项（部门），从倒数第二项往前找，找到第一个以"猛士"开头的作为店名
-    for part in reversed(parts[:-1]):
-        if part.startswith('猛士'):
-            return part
-    return None
-
-
-def parse_create_time(time_val):
-    """解析创建时间为 datetime 对象"""
-    if pd.isna(time_val):
-        return None
-    if isinstance(time_val, datetime):
-        return time_val
+    if isinstance(ct, datetime):
+        if ct.tzinfo is None:
+            return ct.replace(tzinfo=SHANGHAI)
+        return ct
     try:
-        return date_parser.parse(str(time_val))
-    except Exception:
+        dt = datetime.fromisoformat(str(ct))
+    except ValueError:
         return None
-
-
-def get_excel_path_from_upload(filepath):
-    """如果上传的是zip，解压后返回里面的xlsx/xls路径"""
-    if filepath.lower().endswith('.zip'):
-        extract_dir = tempfile.mkdtemp()
-        with zipfile.ZipFile(filepath, 'r') as z:
-            z.extractall(extract_dir)
-            for name in z.namelist():
-                if name.lower().endswith(('.xlsx', '.xls')):
-                    return os.path.join(extract_dir, name), extract_dir
-        raise ValueError('ZIP文件中未找到Excel文件')
-    return filepath, None
-
-
-def analyze_excel(filepath):
-    """分析单个Excel文件，返回群列表和按店统计"""
-    excel_path, temp_dir = get_excel_path_from_upload(filepath)
-    try:
-        df = pd.read_excel(excel_path)
-    finally:
-        if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-    rows = []
-    for _, row in df.iterrows():
-        dept = row.get('群主所在部门（主）', None)
-        store = extract_store(dept)
-        create_time = parse_create_time(row.get('创建时间', None))
-        rows.append({
-            'group_id': row.get('群ID', ''),
-            'group_name': row.get('群名', ''),
-            'owner': row.get('群主', ''),
-            'dept': dept,
-            'store': store,
-            'create_time': create_time.isoformat() if create_time else None,
-            'member_count': int(row.get('群人数', 0) or 0),
-            'customer_count': int(row.get('群客户数', 0) or 0),
-        })
-
-    valid_rows = [r for r in rows if r['store'] is not None]
-    invalid_rows = [r for r in rows if r['store'] is None]
-
-    # 按店统计
-    store_stats = {}
-    for r in valid_rows:
-        s = r['store']
-        if s not in store_stats:
-            store_stats[s] = {'count': 0, 'groups': []}
-        store_stats[s]['count'] += 1
-        store_stats[s]['groups'].append(r)
-
-    return {
-        'total_rows': len(rows),
-        'valid_count': len(valid_rows),
-        'invalid_count': len(invalid_rows),
-        'store_count': len(store_stats),
-        'store_stats': store_stats,
-        'rows': valid_rows,
-    }
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=SHANGHAI)
+    return dt
 
 
 def build_monthly_stats(rows):
-    """按月统计"""
     months = {}
     for r in rows:
-        ct = r.get('create_time')
+        ct = parse_ct(r)
         if ct is None:
             continue
-        if isinstance(ct, str):
-            ct = datetime.fromisoformat(ct)
-        month_key = ct.strftime('%Y-%m')
+        month_key = ct.strftime("%Y-%m")
         if month_key not in months:
-            months[month_key] = {'count': 0, 'stores': {}}
-        months[month_key]['count'] += 1
-        s = r['store']
-        if s not in months[month_key]['stores']:
-            months[month_key]['stores'][s] = 0
-        months[month_key]['stores'][s] += 1
+            months[month_key] = {"count": 0, "stores": {}}
+        months[month_key]["count"] += 1
+        store = r["store"]
+        months[month_key]["stores"][store] = months[month_key]["stores"].get(store, 0) + 1
     return months
 
 
 def compute_stats(all_rows, filter_rows):
-    """计算所有统计结果"""
-    all_valid = [r for r in all_rows if r['store'] is not None]
-    filter_valid = [r for r in filter_rows if r['store'] is not None]
+    all_valid = [r for r in all_rows if r.get("store")]
+    filter_valid = [r for r in filter_rows if r.get("store")]
 
-    all_store_stats = {}
-    for r in all_valid:
-        s = r['store']
-        all_store_stats.setdefault(s, 0)
-        all_store_stats[s] += 1
+    def store_counts(rows):
+        stats = {}
+        for r in rows:
+            store = r["store"]
+            stats[store] = stats.get(store, 0) + 1
+        return dict(sorted(stats.items(), key=lambda x: -x[1]))
 
-    filter_store_stats = {}
-    for r in filter_valid:
-        s = r['store']
-        filter_store_stats.setdefault(s, 0)
-        filter_store_stats[s] += 1
-
-    def parse_ct(r):
-        ct = r.get('create_time')
-        if ct and isinstance(ct, str):
-            return datetime.fromisoformat(ct)
-        return ct
-
+    all_store_stats = store_counts(all_valid)
+    filter_store_stats = store_counts(filter_valid)
     all_after = [r for r in all_valid if parse_ct(r) and parse_ct(r) >= CUTOFF_DATE]
     filter_after = [r for r in filter_valid if parse_ct(r) and parse_ct(r) >= CUTOFF_DATE]
 
-    all_after_stats = {}
-    for r in all_after:
-        s = r['store']
-        all_after_stats.setdefault(s, 0)
-        all_after_stats[s] += 1
-
-    filter_after_stats = {}
-    for r in filter_after:
-        s = r['store']
-        filter_after_stats.setdefault(s, 0)
-        filter_after_stats[s] += 1
-
-    # 按月统计（对齐月份，方便前端比对）
     all_months_raw = build_monthly_stats(all_valid)
     filter_months_raw = build_monthly_stats(filter_valid)
-
-    all_month_keys = set(all_months_raw.keys())
-    filter_month_keys = set(filter_months_raw.keys())
-    all_keys = sorted(all_month_keys | filter_month_keys)
-    years = sorted(set(m.split('-')[0] for m in all_keys))
+    all_keys = sorted(set(all_months_raw) | set(filter_months_raw))
+    years = sorted({m.split("-")[0] for m in all_keys})
 
     monthly_data = {}
-    for m in all_keys:
-        a = all_months_raw.get(m, {})
-        f = filter_months_raw.get(m, {})
-        monthly_data[m] = {
-            'all': {
-                'group_count': a.get('count', 0),
-                'store_count': len(a.get('stores', {})),
-                'store_stats': dict(sorted(a.get('stores', {}).items(), key=lambda x: -x[1])),
+    for month in all_keys:
+        all_m = all_months_raw.get(month, {})
+        filter_m = filter_months_raw.get(month, {})
+        monthly_data[month] = {
+            "all": {
+                "group_count": all_m.get("count", 0),
+                "store_count": len(all_m.get("stores", {})),
+                "store_stats": dict(sorted(all_m.get("stores", {}).items(), key=lambda x: -x[1])),
             },
-            'filter': {
-                'group_count': f.get('count', 0),
-                'store_count': len(f.get('stores', {})),
-                'store_stats': dict(sorted(f.get('stores', {}).items(), key=lambda x: -x[1])),
+            "filter": {
+                "group_count": filter_m.get("count", 0),
+                "store_count": len(filter_m.get("stores", {})),
+                "store_stats": dict(sorted(filter_m.get("stores", {}).items(), key=lambda x: -x[1])),
             },
         }
 
     return {
-        'national': {
-            'all': {
-                'group_count': len(all_valid),
-                'store_count': len(all_store_stats),
-                'store_stats': dict(sorted(all_store_stats.items(), key=lambda x: -x[1])),
+        "national": {
+            "all": {
+                "group_count": len(all_valid),
+                "store_count": len(all_store_stats),
+                "store_stats": all_store_stats,
             },
-            'filter': {
-                'group_count': len(filter_valid),
-                'store_count': len(filter_store_stats),
-                'store_stats': dict(sorted(filter_store_stats.items(), key=lambda x: -x[1])),
-            },
-        },
-        'after_may1': {
-            'all': {
-                'group_count': len(all_after),
-                'store_count': len(all_after_stats),
-                'store_stats': dict(sorted(all_after_stats.items(), key=lambda x: -x[1])),
-            },
-            'filter': {
-                'group_count': len(filter_after),
-                'store_count': len(filter_after_stats),
-                'store_stats': dict(sorted(filter_after_stats.items(), key=lambda x: -x[1])),
+            "filter": {
+                "group_count": len(filter_valid),
+                "store_count": len(filter_store_stats),
+                "store_stats": filter_store_stats,
             },
         },
-        'monthly': {
-            'months': all_keys,
-            'years': years,
-            'data': monthly_data,
+        "after_may1": {
+            "all": {
+                "group_count": len(all_after),
+                "store_count": len(store_counts(all_after)),
+                "store_stats": store_counts(all_after),
+            },
+            "filter": {
+                "group_count": len(filter_after),
+                "store_count": len(store_counts(filter_after)),
+                "store_stats": store_counts(filter_after),
+            },
+        },
+        "monthly": {
+            "months": all_keys,
+            "years": years,
+            "data": monthly_data,
         },
     }
 
 
-@app.route('/')
+@app.route("/")
 def index():
-    """展示页：直接显示最新统计结果"""
     data = load_data()
-    has_data = data is not None
-    return render_template('index.html', has_data=has_data, data=data)
+    return render_template("index.html", has_data=data is not None, data=data)
 
 
-@app.route('/parse')
-def parse_page():
-    """解析页：上传文件并生成统计"""
-    return render_template('parse.html')
+@app.route("/timeout")
+def timeout_page():
+    data = load_data()
+    return render_template("timeout.html", has_data=data is not None, data=data)
 
 
-@app.route('/api/upload', methods=['POST'])
-def upload():
-    """解析上传的文件，保存结果，返回统计"""
-    all_file = request.files.get('all_file')
-    filter_file = request.files.get('filter_file')
-
-    if not all_file or not filter_file:
-        return jsonify({'error': '请上传两个文件'}), 400
-
-    all_path = os.path.join(app.config['UPLOAD_FOLDER'], 'all_' + all_file.filename)
-    filter_path = os.path.join(app.config['UPLOAD_FOLDER'], 'filter_' + filter_file.filename)
-
-    all_file.save(all_path)
-    filter_file.save(filter_path)
-
-    try:
-        all_data = analyze_excel(all_path)
-        filter_data = analyze_excel(filter_path)
-
-        stats = compute_stats(all_data['rows'], filter_data['rows'])
-        summary = {
-            'all_total': all_data['total_rows'],
-            'all_valid': all_data['valid_count'],
-            'all_invalid': all_data['invalid_count'],
-            'filter_total': filter_data['total_rows'],
-            'filter_valid': filter_data['valid_count'],
-            'filter_invalid': filter_data['invalid_count'],
-        }
-
-        save_data(stats, summary)
-
-        return jsonify({
-            'success': True,
-            'stats': stats,
-            'summary': summary,
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route("/parse")
+def parse_gone():
+    return redirect("/", code=301)
 
 
-@app.route('/api/export')
+@app.route("/api/export")
 def export_csv():
-    """导出各店群数量为 CSV"""
-    scope = request.args.get('scope', 'national')
-    dataset = request.args.get('dataset', 'all')
-
+    scope = request.args.get("scope", "national")
+    dataset = request.args.get("dataset", "all")
     data = load_data()
     if not data:
-        return jsonify({'error': '暂无数据，请先解析'}), 400
+        return jsonify({"error": "暂无数据，请先从 SCRM 同步"}), 400
 
-    store_stats = data['stats'].get(scope, {}).get(dataset, {}).get('store_stats', {})
+    store_stats = data["stats"].get(scope, {}).get(dataset, {}).get("store_stats", {})
     if not store_stats:
-        return jsonify({'error': '没有可导出的数据'}), 400
+        return jsonify({"error": "没有可导出的数据"}), 400
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['排名', '门店名称', '群数量'])
+    writer.writerow(["排名", "门店名称", "群数量"])
     for idx, (store, count) in enumerate(store_stats.items(), 1):
         writer.writerow([idx, store, count])
 
     filename_map = {
-        ('national', 'all'): '全国全量各店群数量',
-        ('national', 'filter'): '全国已拉机器人各店群数量',
-        ('after_may1', 'all'): '5月1日后全量各店群数量',
-        ('after_may1', 'filter'): '5月1日后已拉机器人各店群数量',
+        ("national", "all"): "全国全量各店群数量",
+        ("national", "filter"): "全国已拉机器人各店群数量",
+        ("after_may1", "all"): "5月1日后全量各店群数量",
+        ("after_may1", "filter"): "5月1日后已拉机器人各店群数量",
     }
-    filename = filename_map.get((scope, dataset), '各店群数量') + '.csv'
-
+    filename = filename_map.get((scope, dataset), "各店群数量") + ".csv"
     return Response(
-        output.getvalue().encode('utf-8-sig'),
-        mimetype='text/csv; charset=utf-8-sig',
-        headers={'Content-Disposition': "attachment; filename*=UTF-8''" + quote(filename)}
+        output.getvalue().encode("utf-8-sig"),
+        mimetype="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(filename)},
     )
 
 
-@app.route('/api/export-all')
+@app.route("/api/export-all")
 def export_all_csv():
-    """导出总表：所有门店全量群数与拉机器人群数对比"""
     data = load_data()
     if not data:
-        return jsonify({'error': '暂无数据，请先解析'}), 400
+        return jsonify({"error": "暂无数据，请先从 SCRM 同步"}), 400
 
-    all_stats = data['stats']['national']['all']['store_stats']
-    filter_stats = data['stats']['national']['filter']['store_stats']
-
-    all_stores = set(all_stats.keys()) | set(filter_stats.keys())
+    all_stats = data["stats"]["national"]["all"]["store_stats"]
+    filter_stats = data["stats"]["national"]["filter"]["store_stats"]
+    all_stores = set(all_stats) | set(filter_stats)
 
     rows = []
     for store in all_stores:
         all_count = all_stats.get(store, 0)
         filter_count = filter_stats.get(store, 0)
         remaining = all_count - filter_count
-        rate = f'{filter_count / all_count * 100:.1f}%' if all_count else '-'
+        rate = f"{filter_count / all_count * 100:.1f}%" if all_count else "-"
         rows.append((store, all_count, filter_count, rate, remaining))
     rows.sort(key=lambda x: x[4], reverse=True)
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['序号', '店名', '全量群数', '拉机器人群数', '拉群率', '剩余待拉群数'])
+    writer.writerow(["序号", "店名", "全量群数", "拉机器人群数", "拉群率", "剩余待拉群数"])
     for idx, (store, all_count, filter_count, rate, remaining) in enumerate(rows, 1):
         writer.writerow([idx, store, all_count, filter_count, rate, remaining])
 
     return Response(
-        output.getvalue().encode('utf-8-sig'),
-        mimetype='text/csv; charset=utf-8-sig',
-        headers={'Content-Disposition': "attachment; filename*=UTF-8''" + quote('门店群数量总表.csv')}
+        output.getvalue().encode("utf-8-sig"),
+        mimetype="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote("门店群数量总表.csv")},
     )
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+@app.route("/api/timeout/meta")
+def timeout_meta_api():
+    if request.args.get("scan") == "1":
+        try:
+            scan_input_dir(ROOT)
+        except Exception:
+            logging.exception("扫描 input_file 失败")
+    return jsonify(query_meta(ROOT))
+
+
+@app.route("/api/timeout/chart")
+def timeout_chart_api():
+    payload = query_chart(
+        ROOT,
+        scope=request.args.get("scope") or "national",
+        ident=request.args.get("id") or "",
+        grain=request.args.get("grain") or "month",
+        start=request.args.get("start"),
+        end=request.args.get("end"),
+    )
+    return jsonify(payload)
+
+
+@app.route("/api/timeout/import", methods=["POST"])
+def timeout_import_api():
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "请选择管家导出的 Excel"}), 400
+    filename = os.path.basename(uploaded.filename)
+    if not filename.lower().endswith((".xlsx", ".xls")):
+        return jsonify({"error": "只支持 .xlsx"}), 400
+    try:
+        parse_filename_range(filename)
+    except ExcelImportError as exc:
+        return jsonify({"error": str(exc)}), 400
+    dest_dir = os.path.join(ROOT, "input_file")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, filename)
+    uploaded.save(dest)
+    try:
+        result = import_excel_file(ROOT, dest, force=True)
+    except ExcelImportError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+@app.route("/api/timeout/import-scan", methods=["POST"])
+def timeout_import_scan_api():
+    return jsonify(scan_input_dir(ROOT, force=bool(request.args.get("force"))))
+
+
+@app.route("/api/timeout/export")
+def timeout_export_csv():
+    payload = query_chart(
+        ROOT,
+        scope=request.args.get("scope") or "national",
+        ident=request.args.get("id") or "",
+        grain=request.args.get("grain") or "month",
+        start=request.args.get("start"),
+        end=request.args.get("end"),
+    )
+    rules = payload.get("totals", {}).get("rules") or []
+    output = io.StringIO()
+    writer = csv.writer(output)
+    header = ["排名", "门店", "战区", "计入消息数", "触发群数", "规则触发次数"]
+    for rule in rules:
+        header.append((rule.get("rule_name") or rule.get("rule_id")) + "次数")
+    writer.writerow(header)
+    for idx, row in enumerate(payload.get("stores") or [], 1):
+        line = [
+            idx,
+            row.get("store") or "",
+            row.get("theater") or "",
+            row.get("messages") or 0,
+            row.get("rooms") or 0,
+            row.get("triggers") or 0,
+        ]
+        by_rule = row.get("by_rule") or {}
+        for rule in rules:
+            cell = by_rule.get(rule.get("rule_id")) or {}
+            line.append(cell.get("triggers") or 0)
+        writer.writerow(line)
+    filename = "超时提醒门店统计.csv"
+    return Response(
+        output.getvalue().encode("utf-8-sig"),
+        mimetype="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(filename)},
+    )
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5001, debug=True)
