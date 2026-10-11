@@ -104,7 +104,7 @@
                             <summary>查看各店群数量</summary>
                             <div class="store-table-wrapper">
                                 <table class="store-table">
-                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
                                     <tbody>
                                     {% for store, count in data.stats.national.all.store_stats.items() %}
                                     <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
@@ -125,7 +125,7 @@
                             <summary>查看各店群数量</summary>
                             <div class="store-table-wrapper">
                                 <table class="store-table">
-                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
                                     <tbody>
                                     {% for store, count in data.stats.national.filter.store_stats.items() %}
                                     <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
@@ -151,7 +151,7 @@
                             <summary>查看各店群数量</summary>
                             <div class="store-table-wrapper">
                                 <table class="store-table">
-                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
                                     <tbody>
                                     {% for store, count in data.stats.after_may1.all.store_stats.items() %}
                                     <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
@@ -172,7 +172,7 @@
                             <summary>查看各店群数量</summary>
                             <div class="store-table-wrapper">
                                 <table class="store-table">
-                                    <thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>
+                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
                                     <tbody>
                                     {% for store, count in data.stats.after_may1.filter.store_stats.items() %}
                                     <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
