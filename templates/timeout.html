@@ -4,24 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>超时提醒统计</title>
+    <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>门店超时提醒机器人统计控制台</h1>
-            <p class="subtitle" id="updated-at">导入管家「回复超时记录」Excel，按文件名时间范围登记</p>
-        </header>
-        <nav class="page-nav">
-            <a class="page-nav-link" href="/">拉群覆盖</a>
-            <a class="page-nav-link active" href="/timeout">超时提醒</a>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><svg class="ai" aria-hidden="true"><use href="#i-robot"/></svg>超时机器人统计</a>
+        <nav class="page-nav" aria-label="主导航">
+            <a class="page-nav-link" href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
+            <a class="page-nav-link active" href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>
         </nav>
+        <span class="cl-meta" id="updated-at">按文件名时间范围登记</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header">
+            <div class="ant-page-header-heading">
+                <h1>超时提醒统计</h1>
+                <div class="ant-page-header-sub">导入管家「回复超时记录」Excel，按文件名时间范围登记</div>
+            </div>
+        </header>
 
         <div class="stat-block import-panel">
             <div class="table-head">
                 <h3>导出登记</h3>
                 <label class="export-link import-upload">
-                    上传 Excel
+                    <svg class="ai" aria-hidden="true"><use href="#i-upload"/></svg>上传 Excel
                     <input type="file" id="excel-file" accept=".xlsx,.xls" hidden>
                 </label>
             </div>
@@ -33,7 +41,7 @@
                         <tr><th>时间范围</th><th>文件</th><th>行数</th><th>计入</th><th>未归店</th><th>导入时间</th></tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="6" style="text-align:center;color:#909399">尚未导入</td></tr>
+                        <tr><td colspan="6" style="text-align:center" class="cl-muted">尚未导入</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -94,7 +102,8 @@
             </div>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/timeout.js') }}?v=2"></script>
+    <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

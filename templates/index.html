@@ -4,30 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>门店超时提醒机器人统计控制台</title>
+    <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>门店超时提醒机器人统计控制台</h1>
-            <p class="subtitle">
-                {% if data %}
-                    数据更新时间：{{ data.updated_at }}{% if data.summary.source %} · 来源 {{ data.summary.source }}{% endif %} · 每天 00:00 / 12:00 自动同步
-                {% else %}
-                    每天 00:00 / 12:00 从企微 SCRM 自动同步
-                {% endif %}
-            </p>
-        </header>
-        <nav class="page-nav">
-            <a class="page-nav-link active" href="/">拉群覆盖</a>
-            <a class="page-nav-link" href="/timeout">超时提醒</a>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><svg class="ai" aria-hidden="true"><use href="#i-robot"/></svg>超时机器人统计</a>
+        <nav class="page-nav" aria-label="主导航">
+            <a class="page-nav-link active" href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
+            <a class="page-nav-link" href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>
         </nav>
+        <span class="cl-meta">{% if data %}更新 {{ data.updated_at }}{% else %}每天 00:00 / 12:00 自动同步{% endif %}</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header">
+            <div class="ant-page-header-heading">
+                <h1>拉群覆盖</h1>
+                <div class="ant-page-header-sub">
+                    {% if data %}
+                        数据更新时间：{{ data.updated_at }}{% if data.summary.source %} · 来源 {{ data.summary.source }}{% endif %} · 每天 00:00 / 12:00 自动同步
+                    {% else %}
+                        每天 00:00 / 12:00 从企微 SCRM 自动同步
+                    {% endif %}
+                </div>
+            </div>
+            {% if has_data %}<div class="ant-page-header-actions"><a class="ant-btn" href="/api/export-all" title="序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出总表 CSV</a></div>{% endif %}
+        </header>
 
         {% if not has_data %}
         <div class="no-data">
-            <div class="no-data-icon">📊</div>
-            <h2>暂无统计数据</h2>
-            <p>等待定时同步（每天 00:00 / 12:00 从企微 SCRM 全量拉取）</p>
+            <div class="ant-empty">
+                <div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div>
+                <h2 class="ant-empty-title">暂无统计数据</h2>
+                <p class="ant-empty-desc">等待定时同步（每天 00:00 / 12:00 从企微 SCRM 全量拉取）</p>
+            </div>
         </div>
         {% else %}
         <div class="results">
@@ -72,10 +83,6 @@
                         <span class="value">{{ data.summary.filter_invalid }}</span>
                     </div>
                 </div>
-            </div>
-
-            <div class="global-export">
-                <a class="export-link" href="/api/export-all">导出总表 CSV（序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数）</a>
             </div>
 
             <div class="tabs">
@@ -232,5 +239,6 @@
     </script>
     {% endif %}
     <script src="{{ url_for('static', filename='js/display.js') }}?v=3"></script>
+    <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

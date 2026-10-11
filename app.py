@@ -21,6 +21,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
+
+# --- 设计系统（antd-lite.css / sprite.svg，由 design-system/sync.sh 同步到 ds/）---
+_DS_DIR = os.path.join(ROOT, "ds")
+_ds_cache: dict[str, str] = {}
+
+
+def _ds(name: str) -> str:
+    if name not in _ds_cache:
+        with open(os.path.join(_DS_DIR, name), encoding="utf-8") as fh:
+            _ds_cache[name] = fh.read()
+    return _ds_cache[name]
+
+
+app.jinja_env.globals["ds_css"] = lambda: _ds("antd-lite.css")
+app.jinja_env.globals["ds_sprite"] = lambda: _ds("sprite.svg")
+app.jinja_env.globals["ds_cards"] = lambda: _ds("cards.js")
+
+# --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_CLEANER]=audit|on is set (see docs/SSO_CASDOOR.md) ---
+from mhero_auth.flask_adapter import init_app as _mhero_auth_init
+_mhero_auth_init(app, "cleaner", default_mode="off")
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 DATA_FILE = os.path.join(ROOT, "data.json")
 LOCK_FILE = os.path.join(ROOT, ".sync.lock")
