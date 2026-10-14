@@ -4,13 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>超时提醒统计</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     {{ ds_sprite()|safe }}
     <header class="ant-header"><div class="in">
-        <a class="brand" href="/"><svg class="ai" aria-hidden="true"><use href="#i-robot"/></svg>超时机器人统计</a>
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
         <nav class="page-nav" aria-label="主导航">
             <a class="page-nav-link" href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
             <a class="page-nav-link active" href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>

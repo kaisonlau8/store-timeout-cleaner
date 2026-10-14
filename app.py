@@ -40,7 +40,7 @@ app.jinja_env.globals["ds_cards"] = lambda: _ds("cards.js")
 
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_CLEANER]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
-_mhero_auth_init(app, "cleaner", default_mode="off")
+_mhero_auth_init(app, "cleaner", default_mode="off", public_get_paths=["/static/brand/*"])
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 DATA_FILE = os.path.join(ROOT, "data.json")
 LOCK_FILE = os.path.join(ROOT, ".sync.lock")

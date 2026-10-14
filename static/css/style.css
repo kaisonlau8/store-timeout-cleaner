@@ -6,32 +6,26 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: #f5f7fa;
-    color: #333;
+    background: #fafafa;
+    color: rgba(0,0,0,.88);
     line-height: 1.6;
 }
 
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 40px 20px;
+    padding: 24px 20px 40px;
 }
 
-header {
-    text-align: center;
-    margin-bottom: 40px;
+/* 顶栏右侧 / 表格空行 的次要文字 */
+.cl-meta {
+    margin-left: auto;
+    font-size: 13px;
+    color: rgba(0, 0, 0, .45);
+    white-space: nowrap;
 }
-
-header h1 {
-    font-size: 28px;
-    color: #1a1a2e;
-    margin-bottom: 8px;
-}
-
-.subtitle {
-    color: #666;
-    font-size: 15px;
-}
+.cl-muted { color: rgba(0, 0, 0, .45); }
+@media (max-width: 768px) { .cl-meta { display: none; } }
 
 .upload-section {
     display: grid;
@@ -42,8 +36,8 @@ header h1 {
 
 .upload-box {
     background: #fff;
-    border: 2px dashed #c0c4cc;
-    border-radius: 12px;
+    border: 2px dashed #8c8c8c;
+    border-radius: 8px;
     padding: 40px 24px;
     text-align: center;
     cursor: pointer;
@@ -52,13 +46,13 @@ header h1 {
 
 .upload-box:hover,
 .upload-box.dragover {
-    border-color: #409eff;
-    background: #f0f9ff;
+    border-color: #1677ff;
+    background: #e6f4ff;
 }
 
 .upload-box.has-file {
-    border-color: #67c23a;
-    background: #f0f9eb;
+    border-color: #237804;
+    background: #f6ffed;
 }
 
 .upload-icon {
@@ -69,18 +63,18 @@ header h1 {
 .upload-box h3 {
     font-size: 18px;
     margin-bottom: 8px;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
 }
 
 .upload-box p {
-    color: #909399;
+    color: rgba(0,0,0,.45);
     font-size: 14px;
 }
 
 .file-name {
     margin-top: 12px;
     font-size: 13px;
-    color: #67c23a;
+    color: #237804;
     font-weight: 500;
     word-break: break-all;
 }
@@ -94,7 +88,7 @@ header h1 {
     font-size: 16px;
     font-weight: 600;
     color: #fff;
-    background: #409eff;
+    background: #1677ff;
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -102,11 +96,11 @@ header h1 {
 }
 
 .analyze-btn:hover:not(:disabled) {
-    background: #66b1ff;
+    background: #4096ff;
 }
 
 .analyze-btn:disabled {
-    background: #c0c4cc;
+    background: #8c8c8c;
     cursor: not-allowed;
 }
 
@@ -115,7 +109,7 @@ header h1 {
     margin: 0 auto 24px;
     padding: 12px 16px;
     background: #fef0f0;
-    color: #f56c6c;
+    color: #ff4d4f;
     border-radius: 8px;
     font-size: 14px;
 }
@@ -138,15 +132,16 @@ header h1 {
 
 .card {
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 24px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid rgba(5,5,5,.06);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02), 0 2px 4px 0 rgba(0,0,0,.02);
 }
 
 .card h4 {
     font-size: 16px;
     margin-bottom: 16px;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     border-bottom: 2px solid #eee;
     padding-bottom: 8px;
 }
@@ -163,13 +158,13 @@ header h1 {
 }
 
 .stat-row .label {
-    color: #666;
+    color: rgba(0,0,0,.65);
     font-size: 14px;
 }
 
 .stat-row .value {
     font-weight: 600;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     font-size: 15px;
 }
 
@@ -177,7 +172,7 @@ header h1 {
     display: flex;
     gap: 8px;
     margin-bottom: 24px;
-    border-bottom: 2px solid #e4e7ed;
+    border-bottom: 2px solid #d9d9d9;
     padding-bottom: 0;
 }
 
@@ -185,7 +180,7 @@ header h1 {
     padding: 10px 20px;
     font-size: 15px;
     font-weight: 500;
-    color: #606266;
+    color: rgba(0,0,0,.65);
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
@@ -195,12 +190,12 @@ header h1 {
 }
 
 .tab-btn:hover {
-    color: #409eff;
+    color: #1677ff;
 }
 
 .tab-btn.active {
-    color: #409eff;
-    border-bottom-color: #409eff;
+    color: #1677ff;
+    border-bottom-color: #1677ff;
 }
 
 .tab-content {
@@ -219,32 +214,33 @@ header h1 {
 
 .stat-block {
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 28px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid rgba(5,5,5,.06);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02), 0 2px 4px 0 rgba(0,0,0,.02);
 }
 
 .stat-block h3 {
     font-size: 16px;
-    color: #606266;
+    color: rgba(0,0,0,.65);
     margin-bottom: 16px;
 }
 
 .big-number {
     font-size: 42px;
     font-weight: 700;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     margin-bottom: 8px;
 }
 
 .sub-stat {
-    color: #666;
+    color: rgba(0,0,0,.65);
     font-size: 14px;
     margin-bottom: 16px;
 }
 
 .sub-stat strong {
-    color: #409eff;
+    color: #1677ff;
     font-size: 18px;
 }
 
@@ -254,7 +250,7 @@ header h1 {
 
 .store-details summary {
     cursor: pointer;
-    color: #409eff;
+    color: #1677ff;
     font-size: 14px;
     font-weight: 500;
     user-select: none;
@@ -264,7 +260,7 @@ header h1 {
     margin-top: 12px;
     max-height: 400px;
     overflow-y: auto;
-    border: 1px solid #e4e7ed;
+    border: 1px solid #d9d9d9;
     border-radius: 8px;
 }
 
@@ -278,24 +274,25 @@ header h1 {
 .store-table td {
     padding: 10px 14px;
     text-align: left;
-    border-bottom: 1px solid #e4e7ed;
+    border-bottom: 1px solid #d9d9d9;
+    white-space: normal;
 }
 
 .store-table th {
-    background: #f5f7fa;
+    background: #fafafa;
     font-weight: 600;
-    color: #606266;
+    color: rgba(0,0,0,.65);
     position: sticky;
     top: 0;
 }
 
 .store-table tr:hover {
-    background: #f5f7fa;
+    background: #fafafa;
 }
 
 .store-table td:last-child {
     font-weight: 600;
-    color: #409eff;
+    color: #1677ff;
     text-align: right;
 }
 
@@ -309,23 +306,23 @@ header h1 {
     padding: 8px 20px;
     font-size: 14px;
     font-weight: 500;
-    border: 1px solid #dcdfe6;
+    border: 1px solid #d9d9d9;
     border-radius: 6px;
     background: #fff;
-    color: #606266;
+    color: rgba(0,0,0,.65);
     cursor: pointer;
     transition: all 0.3s;
 }
 
 .toggle-btn:hover {
-    border-color: #409eff;
-    color: #409eff;
+    border-color: #1677ff;
+    color: #1677ff;
 }
 
 .toggle-btn.active {
-    background: #409eff;
+    background: #1677ff;
     color: #fff;
-    border-color: #409eff;
+    border-color: #1677ff;
 }
 
 .monthly-list {
@@ -336,15 +333,16 @@ header h1 {
 
 .month-card {
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 20px 24px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid rgba(5,5,5,.06);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02), 0 2px 4px 0 rgba(0,0,0,.02);
 }
 
 .month-card h4 {
     font-size: 16px;
     margin-bottom: 12px;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
 }
 
 .month-stats {
@@ -361,12 +359,12 @@ header h1 {
 .month-stat .num {
     font-size: 24px;
     font-weight: 700;
-    color: #409eff;
+    color: #1677ff;
 }
 
 .month-stat .label {
     font-size: 12px;
-    color: #909399;
+    color: rgba(0,0,0,.45);
     margin-top: 2px;
 }
 
@@ -381,27 +379,28 @@ header h1 {
 .month-store-table td {
     padding: 8px 12px;
     text-align: left;
-    border-bottom: 1px solid #e4e7ed;
+    border-bottom: 1px solid #d9d9d9;
 }
 
 .month-store-table th {
-    background: #f5f7fa;
+    background: #fafafa;
     font-weight: 600;
-    color: #606266;
+    color: rgba(0,0,0,.65);
 }
 
 .month-store-table td:last-child {
     font-weight: 600;
-    color: #409eff;
+    color: #1677ff;
     text-align: right;
 }
 
 .month-selector {
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 20px 24px;
     margin-bottom: 24px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid rgba(5,5,5,.06);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02), 0 2px 4px 0 rgba(0,0,0,.02);
     display: flex;
     align-items: center;
     gap: 16px;
@@ -417,23 +416,23 @@ header h1 {
 .selector-group label {
     font-size: 13px;
     font-weight: 500;
-    color: #909399;
+    color: rgba(0,0,0,.45);
 }
 
 .month-selector select {
     padding: 8px 16px;
     font-size: 15px;
-    border: 1px solid #dcdfe6;
+    border: 1px solid #d9d9d9;
     border-radius: 6px;
     background: #fff;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     cursor: pointer;
     min-width: 100px;
 }
 
 .month-selector select:focus {
     outline: none;
-    border-color: #409eff;
+    border-color: #1677ff;
 }
 
 .filter-btn {
@@ -441,7 +440,7 @@ header h1 {
     font-size: 15px;
     font-weight: 600;
     color: #fff;
-    background: #409eff;
+    background: #1677ff;
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -450,7 +449,7 @@ header h1 {
 }
 
 .filter-btn:hover {
-    background: #66b1ff;
+    background: #4096ff;
 }
 
 .custom-select {
@@ -461,10 +460,10 @@ header h1 {
 .select-trigger {
     padding: 8px 32px 8px 14px;
     font-size: 15px;
-    border: 1px solid #dcdfe6;
+    border: 1px solid #d9d9d9;
     border-radius: 6px;
     background: #fff;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     cursor: pointer;
     position: relative;
     user-select: none;
@@ -472,7 +471,7 @@ header h1 {
 }
 
 .select-trigger:hover {
-    border-color: #c0c4cc;
+    border-color: #8c8c8c;
 }
 
 .select-trigger::after {
@@ -482,16 +481,16 @@ header h1 {
     top: 50%;
     transform: translateY(-50%);
     border: 5px solid transparent;
-    border-top-color: #606266;
+    border-top-color: rgba(0,0,0,.65);
 }
 
 .custom-select.open .select-trigger {
-    border-color: #409eff;
+    border-color: #1677ff;
 }
 
 .custom-select.open .select-trigger::after {
     transform: translateY(-50%) rotate(180deg);
-    border-top-color: #409eff;
+    border-top-color: #1677ff;
     border-bottom-color: transparent;
 }
 
@@ -501,7 +500,7 @@ header h1 {
     left: 0;
     right: 0;
     background: #fff;
-    border: 1px solid #e4e7ed;
+    border: 1px solid #d9d9d9;
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     max-height: 220px;
@@ -517,28 +516,28 @@ header h1 {
 .select-option {
     padding: 8px 14px;
     font-size: 14px;
-    color: #606266;
+    color: rgba(0,0,0,.65);
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .select-option:hover {
-    background: #f5f7fa;
-    color: #409eff;
+    background: #fafafa;
+    color: #1677ff;
 }
 
 .select-option.selected {
-    background: #f0f9ff;
-    color: #409eff;
+    background: #e6f4ff;
+    color: #1677ff;
     font-weight: 600;
 }
 
 .month-title {
     font-size: 20px;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     margin-bottom: 20px;
     padding-bottom: 10px;
-    border-bottom: 2px solid #e4e7ed;
+    border-bottom: 2px solid #d9d9d9;
 }
 
 .month-compare {
@@ -550,52 +549,46 @@ header h1 {
 }
 
 .export-link {
-    display: inline-block;
-    padding: 6px 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 15px;
+    min-height: 32px;
     font-size: 13px;
-    color: #409eff;
-    background: #f0f9ff;
-    border: 1px solid #b3d8ff;
+    color: rgba(0, 0, 0, .88);
+    background: #fff;
+    border: 1px solid #d9d9d9;
     border-radius: 6px;
     text-decoration: none;
-    transition: all 0.3s;
+    cursor: pointer;
+    transition: color .2s, border-color .2s;
 }
 
 .export-link:hover {
-    background: #409eff;
-    color: #fff;
+    color: #1677ff;
+    border-color: #1677ff;
+    text-decoration: none;
 }
 
 .no-data {
     text-align: center;
     padding: 60px 20px;
     background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border-radius: 8px;
+    border: 1px solid rgba(5,5,5,.06);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02), 0 2px 4px 0 rgba(0,0,0,.02);
 }
 
-.no-data-icon {
-    font-size: 56px;
-    margin-bottom: 16px;
-}
-
-.no-data h2 {
-    font-size: 20px;
-    color: #1a1a2e;
-    margin-bottom: 8px;
-}
-
-.no-data p {
-    color: #909399;
-    margin-bottom: 24px;
-}
+.no-data .ant-empty-image .ai { width: 40px; height: 40px; }
+.no-data .ant-empty-title { font-size: 16px; }
+.no-data .ant-empty-desc { font-size: 13px; }
 
 .success-msg {
     max-width: 600px;
     margin: 0 auto 24px;
     padding: 20px 24px;
-    background: #f0f9eb;
-    color: #67c23a;
+    background: #f6ffed;
+    color: #237804;
     border-radius: 8px;
     text-align: center;
     font-size: 15px;
@@ -607,50 +600,42 @@ header h1 {
 }
 
 .success-msg a {
-    color: #409eff;
+    color: #0958d9;
     text-decoration: underline;
 }
 
-.global-export {
-    text-align: right;
-    margin-bottom: 16px;
-}
-
-.global-export .export-link {
-    background: #67c23a;
-    border-color: #85ce61;
-    color: #fff;
-    font-weight: 600;
-    padding: 8px 20px;
-}
-
-.global-export .export-link:hover {
-    background: #85ce61;
-}
 
 .page-nav {
     display: flex;
-    justify-content: center;
-    gap: 8px;
-    margin: -16px 0 32px;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 0 24px;
 }
 
 .page-nav-link {
-    padding: 8px 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 36px;
+    padding: 0 12px;
     font-size: 14px;
-    font-weight: 600;
-    color: #606266;
-    background: #fff;
-    border: 1px solid #e4e7ed;
-    border-radius: 999px;
+    color: rgba(0, 0, 0, .88);
+    border-radius: 6px;
+    text-decoration: none;
+}
+.page-nav-link .ai { color: rgba(0, 0, 0, .45); }
+
+.page-nav-link:hover {
+    background: rgba(0, 0, 0, .04);
     text-decoration: none;
 }
 
 .page-nav-link.active {
-    color: #fff;
-    background: #409eff;
-    border-color: #409eff;
+    color: #1677ff;
+    font-weight: 600;
+    background: #e6f4ff;
 }
+.page-nav-link.active .ai { color: #1677ff; }
 
 .timeout-filters select,
 .timeout-filters input[type="date"],
@@ -658,10 +643,10 @@ header h1 {
 #store-input {
     padding: 8px 14px;
     font-size: 14px;
-    border: 1px solid #dcdfe6;
+    border: 1px solid #d9d9d9;
     border-radius: 6px;
     background: #fff;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     min-width: 160px;
 }
 
@@ -680,20 +665,21 @@ header h1 {
 
 .chart-card {
     background: #fff;
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 24px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border: 1px solid rgba(5,5,5,.06);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02), 0 2px 4px 0 rgba(0,0,0,.02);
     margin-bottom: 24px;
 }
 
 .chart-card h3 {
     font-size: 16px;
-    color: #1a1a2e;
+    color: rgba(0,0,0,.88);
     margin-bottom: 4px;
 }
 
 .chart-hint {
-    color: #909399;
+    color: rgba(0,0,0,.45);
     font-size: 13px;
     margin-bottom: 16px;
 }
@@ -724,7 +710,7 @@ header h1 {
 
 .import-panel code {
     font-size: 12px;
-    background: #f5f7fa;
+    background: #fafafa;
     padding: 1px 6px;
     border-radius: 4px;
 }
