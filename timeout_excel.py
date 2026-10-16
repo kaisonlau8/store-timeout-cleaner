@@ -260,9 +260,19 @@ def import_excel_file(root: str, path: str, *, force: bool = False) -> dict[str,
             rec["events"],
             rec["unmatched"],
         )
+        _schedule_llm_review(root, start, end)
         return rec
     finally:
         conn.close()
+
+
+def _schedule_llm_review(root: str, start: date, end: date) -> None:
+    try:
+        from score_llm import maybe_autostart_review
+
+        maybe_autostart_review(root, start, end, source="import")
+    except Exception:
+        log.warning("导入后自动 LLM 复核没有启动")
 
 
 def scan_input_dir(root: str, *, force: bool = False) -> dict[str, Any]:

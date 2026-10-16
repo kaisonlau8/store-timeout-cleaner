@@ -41,8 +41,8 @@
                 <div class="ant-page-header-sub">按选定日期重算收缩率。默认上一自然季度。</div>
             </div>
             <div class="ant-page-header-actions score-actions">
-                <a class="export-link" href="/api/score/export.csv?start={{ report.start }}&amp;end={{ report.end }}&amp;llm={{ 1 if report.llm_on else 0 }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 CSV</a>
-                <a class="export-link" href="/api/score/export.xlsx?start={{ report.start }}&amp;end={{ report.end }}&amp;llm={{ 1 if report.llm_on else 0 }}"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
+                <a class="export-link" href="/api/score/export.csv?start={{ report.start }}&amp;end={{ report.end }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 CSV</a>
+                <a class="export-link" href="/api/score/export.xlsx?start={{ report.start }}&amp;end={{ report.end }}"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
             </div>
         </header>
 
@@ -55,24 +55,15 @@
                 <label for="end-date">结束</label>
                 <input type="date" id="end-date" name="end" value="{{ report.end }}">
             </div>
-            <div class="selector-group">
-                <label for="llm-toggle">LLM 复核</label>
-                <input type="hidden" name="llm" value="0">
-                <label class="toggle-btn {% if report.llm_on %}active{% endif %}">
-                    <input type="checkbox" id="llm-toggle" name="llm" value="1" {% if report.llm_on %}checked{% endif %} {% if not report.llm_available %}disabled{% endif %}>
-                    计入剔除
-                </label>
-            </div>
             <button class="filter-btn" type="submit">查询</button>
-            <button class="filter-btn" type="button" id="llm-run" data-start="{{ report.start }}" data-end="{{ report.end }}" data-force="{{ 1 if report.llm_pending and report.llm_cached >= report.llm_pending else 0 }}" data-running="{{ 1 if report.llm_job.status == 'running' else 0 }}" {% if not report.llm_available %}disabled{% endif %}>{% if report.llm_pending and report.llm_cached < report.llm_pending %}运行 LLM 复核{% else %}重新复核{% endif %}</button>
         </form>
 
         {% if not report.llm_available %}
-        <p class="score-note" id="llm-status">未配置 DEEPSEEK_API_KEY，LLM 复核关闭。评分只使用确定性规则。</p>
-        {% elif report.llm_on %}
-        <p class="score-note" id="llm-status">已计入 LLM 复核剔除。缓存 {{ report.llm_cached }}/{{ report.llm_pending }} 条。点击复核才会把客户消息正文发给 DeepSeek。</p>
+        <p class="score-note" id="llm-status" data-auto="0">LLM复核关闭</p>
+        {% elif report.llm_cached < report.llm_pending %}
+        <p class="score-note" id="llm-status" data-auto="1" data-start="{{ report.start }}" data-end="{{ report.end }}" data-state="{{ report.llm_job.status }}" data-since="{{ report.llm_job.updated_at }}">LLM复核已自动计入。未缓存消息由后台补齐，完成后自动更新得分。</p>
         {% else %}
-        <p class="score-note" id="llm-status">LLM 复核未计入得分。缓存 {{ report.llm_cached }}/{{ report.llm_pending }} 条。点击复核才会把客户消息正文发给 DeepSeek。</p>
+        <p class="score-note" id="llm-status" data-auto="0" data-start="{{ report.start }}" data-end="{{ report.end }}">LLM复核已自动计入</p>
         {% endif %}
 
         <p class="score-note">
@@ -107,7 +98,7 @@
                     <tbody>
                         {% for row in report.stores %}
                         <tr>
-                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}&amp;llm={{ 1 if report.llm_on else 0 }}">{{ row.name }}</a></td>
+                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}">{{ row.name }}</a></td>
                             <td>{{ row.code or '—' }}</td>
                             <td>{{ row.theater or '—' }}</td>
                             <td class="num">{{ row.robot_group_count }}</td>
@@ -128,6 +119,6 @@
         </div>
     </div>
     <script>{{ ds_cards()|safe }}</script>
-    <script src="{{ url_for('static', filename='js/score.js') }}?v=1"></script>
+    <script src="{{ url_for('static', filename='js/score.js') }}?v=2"></script>
 </body>
 </html>

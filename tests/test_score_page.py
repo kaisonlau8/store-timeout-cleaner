@@ -25,8 +25,13 @@ class ScorePageTests(unittest.TestCase):
         self.app.jinja_env.globals["ds_cards"] = lambda: ""
         register_score(self.app, self.root)
         self.client = self.app.test_client()
+        self._old_key = os.environ.pop("DEEPSEEK_API_KEY", None)
 
     def tearDown(self):
+        if self._old_key is not None:
+            os.environ["DEEPSEEK_API_KEY"] = self._old_key
+        elif "DEEPSEEK_API_KEY" in os.environ:
+            del os.environ["DEEPSEEK_API_KEY"]
         self.tmp.cleanup()
 
     def test_default_range_is_last_quarter(self):

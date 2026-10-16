@@ -14,11 +14,13 @@ os.chdir(ROOT)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+from score_llm import wait_review_jobs  # noqa: E402
 from timeout_excel import scan_input_dir  # noqa: E402
 
 
 def main() -> int:
     summary = scan_input_dir(ROOT)
+    wait_review_jobs()
     logging.info(
         "扫描完成 imported=%s skipped=%s errors=%s",
         len(summary.get("imported") or []),

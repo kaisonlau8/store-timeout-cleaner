@@ -260,10 +260,17 @@ class CacheAndScoreTests(unittest.TestCase):
         app.jinja_env.globals["ds_cards"] = lambda: ""
         register_score(app, self.root)
         client = app.test_client()
-        page = client.get("/score?start=2026-07-01&end=2026-09-30")
+        with mock.patch("score_llm.start_review_job") as job:
+            page = client.get("/score?start=2026-07-01&end=2026-09-30")
+        self.assertEqual(page.status_code, 200)
+        job.assert_not_called()
         html = page.get_data(as_text=True)
-        self.assertIn("DEEPSEEK_API_KEY", html)
-        self.assertIn("LLM 复核关闭", html)
+        self.assertIn("LLM复核关闭", html)
+        self.assertNotIn("运行 LLM", html)
+        self.assertNotIn("计入剔除", html)
+        self.assertNotIn("llm-run", html)
+        self.assertNotIn("llm-toggle", html)
+        self.assertNotIn("DEEPSEEK_API_KEY", html)
 
         os.environ["DEEPSEEK_API_KEY"] = "super-secret-key"
         with mock.patch("score_web.start_review_job", return_value={"status": "running", "total": 2, "done": 0, "failed": 0}) as job:
@@ -298,6 +305,233 @@ class CacheAndScoreTests(unittest.TestCase):
                 break
             time.sleep(0.05)
         self.assertEqual(current["status"], "done")
+
+    def _score_client(self):
+        from flask import Flask
+
+        from score_web import register_score
+
+        app = Flask(
+            __name__,
+            template_folder=os.path.join(os.path.dirname(__file__), "..", "templates"),
+        )
+        app.jinja_env.globals["ds_css"] = lambda: ""
+        app.jinja_env.globals["ds_sprite"] = lambda: ""
+        app.jinja_env.globals["ds_cards"] = lambda: ""
+        register_score(app, self.root)
+        return app.test_client()
+
+    def test_force_refresh_sends_cached_texts_again(self):
+        calls = {"n": 0}
+
+        def post(url, headers=None, json=None, timeout=None):
+            calls["n"] += 1
+            content = json["messages"][1]["content"]
+            return _ok(_items_for(content))
+
+        kwargs = {
+            "key": "k",
+            "post": post,
+            "sleep": lambda _s: None,
+        }
+        execute_review(self.root, date(2026, 7, 1), date(2026, 9, 30), **kwargs)
+        self.assertEqual(calls["n"], 1)
+        execute_review(self.root, date(2026, 7, 1), date(2026, 9, 30), force=True, **kwargs)
+        self.assertEqual(calls["n"], 2)
+
+    def test_opening_score_starts_incremental_review_for_uncached_texts(self):
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        client = self._score_client()
+        with mock.patch(
+            "score_llm.start_review_job",
+            return_value={"status": "running", "total": 3, "done": 0, "failed": 0, "note": ""},
+        ) as job:
+            page = client.get("/score?start=2026-07-01&end=2026-09-30")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("LLM复核已自动计入", html)
+        self.assertNotIn("运行 LLM", html)
+        self.assertNotIn("重新复核", html)
+        self.assertNotIn("计入剔除", html)
+        self.assertNotIn("llm-run", html)
+        self.assertNotIn("llm-toggle", html)
+        self.assertNotIn("llm=", html)
+        self.assertIn('data-auto="1"', html)
+        job.assert_called_once()
+        self.assertFalse(job.call_args.kwargs.get("force", False))
+        script_path = os.path.join(os.path.dirname(__file__), "..", "static", "js", "score.js")
+        with open(script_path, encoding="utf-8") as handle:
+            script = handle.read()
+        self.assertNotIn("llm-run", script)
+        self.assertIn("llm-status", script)
+
+    def test_cached_scores_apply_without_an_include_toggle(self):
+        from score_llm import cache_put
+
+        cache_put(
+            self.root,
+            {
+                "刹车有异响": {"count": False, "reason": "非提问告知"},
+                "想预约保养": {"count": True, "reason": "有效"},
+                "对不上门店": {"count": True, "reason": "有效"},
+            },
+        )
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        client = self._score_client()
+        with mock.patch("score_llm.start_review_job") as job:
+            page = client.get("/score?start=2026-07-01&end=2026-09-30&llm=0")
+            detail = client.get("/score/store?name=甲店&start=2026-07-01&end=2026-09-30&llm=0")
+            exported = client.get("/api/score/export.csv?start=2026-07-01&end=2026-09-30&llm=0")
+        html = page.get_data(as_text=True)
+        self.assertIn("LLM复核已自动计入", html)
+        self.assertIn('data-auto="0"', html)
+        self.assertNotIn("计入剔除", html)
+        self.assertNotIn("llm=", html)
+        job.assert_not_called()
+        body = detail.get_data(as_text=True)
+        self.assertIn("LLM复核剔除: 非提问告知", body)
+        self.assertNotIn("llm=", body)
+        line = next(row for row in exported.get_data(as_text=True).splitlines() if row.startswith("甲店"))
+        self.assertIn("甲店,,华东战区,2,2,0,1", line)
+
+    def test_partial_cache_counts_now_and_schedules_the_gap(self):
+        from score_llm import cache_put
+
+        cache_put(self.root, {"刹车有异响": {"count": False, "reason": "非提问告知"}})
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        client = self._score_client()
+        with mock.patch(
+            "score_llm.start_review_job",
+            return_value={"status": "running", "total": 2, "done": 0, "failed": 0, "note": ""},
+        ) as job:
+            detail = client.get("/score/store?name=甲店&start=2026-07-01&end=2026-09-30&llm=0")
+        self.assertIn("LLM复核剔除: 非提问告知", detail.get_data(as_text=True))
+        job.assert_called_once()
+        self.assertFalse(job.call_args.kwargs.get("force", False))
+
+    def test_score_page_returns_before_review_finishes(self):
+        from score_llm import wait_review_jobs
+
+        gate = threading.Event()
+
+        def post(url, headers=None, json=None, timeout=None):
+            self.assertTrue(gate.wait(3))
+            content = json["messages"][1]["content"]
+            return _ok(_items_for(content))
+
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        client = self._score_client()
+        with mock.patch("score_llm._default_post", post):
+            started = time.monotonic()
+            page = client.get("/score?start=2026-07-01&end=2026-09-30")
+            elapsed = time.monotonic() - started
+            self.assertEqual(page.status_code, 200)
+            self.assertLess(elapsed, 1.0)
+            self.assertIn("LLM复核已自动计入", page.get_data(as_text=True))
+            gate.set()
+            wait_review_jobs()
+
+    def test_excel_import_schedules_incremental_review_only(self):
+        from timeout_excel import import_excel_file
+
+        path = os.path.join(self.root, "input_file", "导出时间范围20260701-20260930回复超时记录.xlsx")
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        with mock.patch("score_llm.start_review_job", return_value={"status": "running"}) as job:
+            rec = import_excel_file(self.root, path, force=True)
+            self.assertGreater(rec["events"], 0)
+            job.assert_called_once()
+            self.assertFalse(job.call_args.kwargs.get("force", False))
+            self.assertEqual(job.call_args.args[1], date(2026, 7, 1))
+            self.assertEqual(job.call_args.args[2], date(2026, 9, 30))
+            job.reset_mock()
+            again = import_excel_file(self.root, path, force=False)
+        self.assertTrue(again.get("skipped"))
+        job.assert_not_called()
+
+    def test_excel_import_without_key_still_succeeds(self):
+        from timeout_excel import import_excel_file
+
+        path = os.path.join(self.root, "input_file", "导出时间范围20260701-20260930回复超时记录.xlsx")
+        with mock.patch("score_llm.start_review_job") as job:
+            rec = import_excel_file(self.root, path, force=True)
+        self.assertGreater(rec["events"], 0)
+        job.assert_not_called()
+
+    def test_failed_review_does_not_immediately_autostart_again(self):
+        from score_llm import maybe_autostart_review
+
+        def post(url, headers=None, json=None, timeout=None):
+            return _Resp(500)
+
+        execute_review(
+            self.root,
+            date(2026, 7, 1),
+            date(2026, 9, 30),
+            key="k",
+            post=post,
+            sleep=lambda _s: None,
+            attempts=1,
+        )
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        with mock.patch("score_llm.start_review_job") as job:
+            maybe_autostart_review(
+                self.root,
+                date(2026, 7, 1),
+                date(2026, 9, 30),
+                pending=3,
+                cached=0,
+                source="page",
+            )
+        job.assert_not_called()
+        with mock.patch("score_llm.start_review_job", return_value={"status": "running"}) as job:
+            maybe_autostart_review(
+                self.root,
+                date(2026, 7, 1),
+                date(2026, 9, 30),
+                source="import",
+            )
+        job.assert_called_once()
+        self.assertFalse(job.call_args.kwargs.get("force", False))
+
+    def test_import_during_running_review_queues_another_incremental_pass(self):
+        from score_llm import maybe_autostart_review, wait_review_jobs
+
+        entered = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        def fake_execute(root, start, end, **kwargs):
+            calls.append(bool(kwargs.get("force")))
+            if len(calls) == 1:
+                entered.set()
+                self.assertTrue(release.wait(3))
+            return {"reviewed": 0, "cached": 0, "failed": 0, "status": "done"}
+
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        with mock.patch("score_llm.execute_review", fake_execute):
+            start_review_job(self.root, date(2026, 7, 1), date(2026, 9, 30), force=False)
+            self.assertTrue(entered.wait(2))
+            maybe_autostart_review(self.root, date(2026, 7, 1), date(2026, 9, 30), source="import")
+            release.set()
+            wait_review_jobs()
+        self.assertEqual(calls, [False, False])
+
+    def test_force_endpoint_remains_off_the_score_page(self):
+        os.environ["DEEPSEEK_API_KEY"] = "k"
+        client = self._score_client()
+        with mock.patch(
+            "score_web.start_review_job",
+            return_value={"status": "running", "total": 1, "done": 0, "failed": 0, "note": ""},
+        ) as job:
+            resp = client.post("/api/score/llm-review?start=2026-07-01&end=2026-09-30&force=1")
+        self.assertEqual(resp.status_code, 202)
+        self.assertTrue(job.call_args.kwargs.get("force"))
+
+    def test_sync_script_waits_for_background_review(self):
+        path = os.path.join(os.path.dirname(__file__), "..", "scripts", "sync_timeout.py")
+        with open(path, encoding="utf-8") as handle:
+            script = handle.read()
+        self.assertIn("wait_review_jobs", script)
 
 
 if __name__ == "__main__":

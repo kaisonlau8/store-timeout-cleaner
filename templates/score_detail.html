@@ -32,7 +32,7 @@
             <div class="ant-page-header-heading">
                 <h1>{{ detail.name if detail else '超时明细' }}</h1>
                 <div class="ant-page-header-sub">
-                    <a href="/score?start={{ start }}&amp;end={{ end }}&amp;llm={{ 1 if llm_on else 0 }}">返回评分列表</a>
+                    <a href="/score?start={{ start }}&amp;end={{ end }}">返回评分列表</a>
                     {% if detail and detail.store %}
                         · {{ detail.store.tier or '—' }} · {{ '%.2f'|format(detail.store.score) }} 分
                         · 原始 {{ detail.store.raw }} / 有效 {{ detail.store.valid }}
@@ -40,6 +40,16 @@
                 </div>
             </div>
         </header>
+
+        {% if detail and detail.store %}
+        {% if not detail.llm_available %}
+        <p class="score-note" id="llm-status" data-auto="0">LLM复核关闭</p>
+        {% elif detail.llm_cached < detail.llm_pending %}
+        <p class="score-note" id="llm-status" data-auto="1" data-start="{{ start }}" data-end="{{ end }}" data-state="{{ detail.llm_job.status }}" data-since="{{ detail.llm_job.updated_at }}" data-reload="/score/store?name={{ detail.name|urlencode }}&amp;start={{ start }}&amp;end={{ end }}">LLM复核已自动计入。未缓存消息由后台补齐，完成后自动更新得分。</p>
+        {% else %}
+        <p class="score-note" id="llm-status" data-auto="0">LLM复核已自动计入</p>
+        {% endif %}
+        {% endif %}
 
         {% if not detail or not detail.store %}
         <div class="no-data">
@@ -100,5 +110,6 @@
         {% endif %}
     </div>
     <script>{{ ds_cards()|safe }}</script>
+    <script src="{{ url_for('static', filename='js/score.js') }}?v=2"></script>
 </body>
 </html>
