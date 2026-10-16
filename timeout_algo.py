@@ -313,7 +313,11 @@ def apply_filters(root: str, start: date, end: date, *, llm: bool = True) -> dic
     primary = {ev["msg_id"]: ev.get("reason") or "" for ev in events
                if (ev.get("reason") or "") != "重复触发(同一消息)"}
     for ev in events:
-        if ev.get("reason") == "重复触发(同一消息)" and primary.get(ev["msg_id"]):
+        if ev.get("reason") != "重复触发(同一消息)":
+            continue
+        if ev["msg_id"] not in primary:
+            ev["reason"] = "重复消息(同群同秒同内容)"  # 另一条 msg_id 的重复发送
+        elif primary[ev["msg_id"]]:
             ev["reason"] = primary[ev["msg_id"]]
     conn = open_db(root)
     try:

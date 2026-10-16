@@ -45,3 +45,5 @@ body.sd-lock{overflow:hidden}
 @media (max-width:600px){.sd-body{padding:10px 12px 24px}.sd-head{padding:12px}}
 .sd-quote{display:block;background:#f5f5f5;border-radius:6px;padding:6px 10px;color:rgba(0,0,0,.88);white-space:pre-wrap;word-break:break-word;line-height:1.5}
 .cell-msg{max-width:320px;white-space:normal;word-break:break-word}
+#timeout-events .sd-btn,#timeout-excluded .sd-btn{white-space:nowrap}
+#timeout-events td:nth-child(2),#timeout-excluded td:nth-child(2){white-space:nowrap}

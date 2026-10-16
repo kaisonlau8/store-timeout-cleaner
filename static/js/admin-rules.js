@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = (t, v, h) => '<div class="card"><h4>' + esc(t) + '</h4><div class="big-number" style="font-size:28px">' + esc(v) + '</div><div class="sub-stat">' + esc(h) + '</div></div>';
             $('last-run').innerHTML = card('区间', r.days + ' 天', r.start + ' ~ ' + r.end) + card('规则命中', r.total, '含同一消息多规则') +
                 card('计入', r.valid, '有效超时消息') + card('规则过滤剔除', r.rule_excluded, '重复/话术/寒暄/@/连发') +
-                card('DeepSeek 剔除', r.llm_excluded, '复核判定无需回复') + card('完成于', (r.finished_at || '').slice(5, 16), r.label || '');
+                card('DeepSeek 剔除', r.llm_excluded, '复核判定无需回复') + card('完成于', (r.finished_at || '').slice(5, 16), ({ cron: '定时同步', cli: '手动回填', restore: '手动回填' })[r.label] || r.label || '');
         }
         showJob(payload.job);
     }
