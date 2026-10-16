@@ -12,6 +12,7 @@
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=1">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -76,6 +77,13 @@
                     <span class="value">{{ detail.pending_count }}</span>
                 </div>
             </div>
+            <div class="card sd-clickable" role="button" tabindex="0" title="点击查看超时预警明细" data-sd-title="{{ detail.store }} · 超时预警明细" data-sd-events="{{ {'store': detail.store, 'start': filters.date_from, 'end': filters.date_to}|tojson|forceescape }}">
+                <h4>超时预警</h4>
+                <div class="stat-row">
+                    <span class="label">点击看明细</span>
+                    <span class="value">{{ detail.events|length }}</span>
+                </div>
+            </div>
         </div>
 
         {% set active = [] %}
@@ -114,7 +122,7 @@
                     <thead><tr><th data-card-title>群名</th><th>创建时间</th></tr></thead>
                     <tbody>
                         {% for row in detail.pending %}
-                        <tr><td data-card-title>{{ row.group_name or '（未命名）' }}</td><td>{{ row.create_time or '未知' }}</td></tr>
+                        <tr><td data-card-title><button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未命名）' }}" title="查看群成员">{{ row.group_name or '（未命名）' }}</button></td><td>{{ row.create_time or '未知' }}</td></tr>
                         {% else %}
                         <tr><td colspan="2" class="cl-muted">当前条件下暂无未拉机器人的群</td></tr>
                         {% endfor %}
@@ -132,7 +140,7 @@
                     <thead><tr><th data-card-title>群名</th><th>创建时间</th></tr></thead>
                     <tbody>
                         {% for row in detail.robot %}
-                        <tr><td data-card-title>{{ row.group_name or '（未命名）' }}</td><td>{{ row.create_time or '未知' }}</td></tr>
+                        <tr><td data-card-title><button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未命名）' }}" title="查看群成员">{{ row.group_name or '（未命名）' }}</button></td><td>{{ row.create_time or '未知' }}</td></tr>
                         {% else %}
                         <tr><td colspan="2" class="cl-muted">当前条件下暂无已拉机器人的群</td></tr>
                         {% endfor %}
@@ -146,10 +154,10 @@
             <div class="ant-collapse-content">
             <div class="store-table-wrapper">
                 <table class="store-table">
-                    <thead><tr><th data-card-title>群名</th><th>超时时间</th><th>规则名称</th><th>消息 ID</th></tr></thead>
+                    <thead><tr><th data-card-title>群名</th><th>超时时间</th><th>规则名称</th><th>详情</th></tr></thead>
                     <tbody>
                         {% for row in detail.events %}
-                        <tr><td data-card-title>{{ row.group_name or '（未知群）' }}</td><td>{{ row.created_at }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td>{{ row.msg_id }}</td></tr>
+                        <tr><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10]}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
                         {% else %}
                         <tr><td colspan="4" class="cl-muted">当前条件下暂无超时记录</td></tr>
                         {% endfor %}
@@ -166,6 +174,7 @@
       if (f && window.matchMedia('(max-width: 768px)').matches) f.removeAttribute('open');
     })();
     </script>
+    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=1"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

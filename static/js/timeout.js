@@ -142,8 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderCards(data) {
         const totals = data.totals || {};
         document.getElementById('total-cards').innerHTML =
-            cardHtml('计入超时的消息', totals.messages || 0, '去重后的客户消息') +
-            cardHtml('规则触发次数', totals.triggers || 0, '各规则合计，一条消息可计多次') +
+            cardHtml('计入超时的消息', totals.messages || 0, '去重后的客户消息 · 点击看明细', {}) +
+            cardHtml('规则触发次数', totals.triggers || 0, '各规则合计，一条消息可计多次', {}) +
             cardHtml('触发群数', totals.rooms || 0, '有超时计入的客户群') +
             cardHtml('涉及门店', totals.stores || 0, '当前筛选范围内');
 
@@ -157,14 +157,24 @@ document.addEventListener('DOMContentLoaded', () => {
             cardHtml(
                 rule.rule_name || rule.rule_id,
                 rule.triggers || 0,
-                '消息 ' + (rule.messages || 0) + ' · 群 ' + (rule.rooms || 0)
+                '消息 ' + (rule.messages || 0) + ' · 群 ' + (rule.rooms || 0) + ' · 点击看明细',
+                { rule_id: rule.rule_id }
             )
         ).join('');
     }
 
-    function cardHtml(title, value, hint) {
+    let lastQuery = {};
+    function evParams(extra) {
+        const q = lastQuery;
+        return Object.assign({ theater: q.theater || '', q: q.scope === 'store' ? '' : (q.q || ''), store: q.scope === 'store' ? q.id : '', start: q.start || '', end: q.end || '' }, extra || {});
+    }
+    function evAttr(extra, title) {
+        return ' data-sd-events="' + escapeHtml(JSON.stringify(evParams(extra))) + '" data-sd-title="' + escapeHtml(title) + '"';
+    }
+    function cardHtml(title, value, hint, extra) {
+        const click = extra ? ' sd-clickable" role="button" tabindex="0"' + evAttr(extra, title + ' · 明细') + ' title="点击查看明细' : '';
         return (
-            '<div class="card">' +
+            '<div class="card' + click + '">' +
                 '<h4>' + escapeHtml(title) + '</h4>' +
                 '<div class="big-number" style="font-size:32px">' + value + '</div>' +
                 '<div class="sub-stat">' + escapeHtml(hint) + '</div>' +
@@ -236,14 +246,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         tbody.innerHTML = rows.map((row, idx) => {
-            let html = '<tr><td>' + (idx + 1) + '</td><td>' + escapeHtml(row.store || '') +
+            const st = row.store || '';
+            const num = (n, extra, label) => n ? '<button type="button" class="sd-num"' + evAttr(Object.assign({ store: st, q: '' }, extra), st + ' · ' + label) + '>' + n + '</button>' : '0';
+            let html = '<tr><td>' + (idx + 1) + '</td><td>' + (st ? '<a href="/store/' + encodeURIComponent(st) + '">' + escapeHtml(st) + '</a>' : '') +
                 '</td><td>' + escapeHtml(row.theater || '') +
-                '</td><td>' + (row.messages || 0) +
+                '</td><td>' + num(row.messages || 0, {}, '超时明细') +
                 '</td><td>' + (row.rooms || 0) +
-                '</td><td>' + (row.triggers || 0) + '</td>';
+                '</td><td>' + num(row.triggers || 0, {}, '超时明细') + '</td>';
             rules.forEach((rule) => {
                 const cell = (row.by_rule || {})[rule.rule_id] || {};
-                html += '<td>' + (cell.triggers || 0) + '</td>';
+                html += '<td>' + num(cell.triggers || 0, { rule_id: rule.rule_id }, rule.rule_name || '超时明细') + '</td>';
             });
             return html + '</tr>';
         }).join('');
@@ -275,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let data = {};
             try { data = await res.json(); } catch (e) { data = {}; }
             if (!res.ok) throw new Error((data && data.error) || '查询失败');
+            lastQuery = q;
             renderCards(data);
             renderChart(data);
             renderTable(data);

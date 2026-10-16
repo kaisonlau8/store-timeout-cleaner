@@ -27,6 +27,7 @@ from scrm_sync import sync_from_scrm
 from score_web import register_score
 from timeout_excel import ExcelImportError, import_excel_file, parse_filename_range, scan_input_dir
 from timeout_query import query_chart, query_meta
+import stc_live
 from timeout_store import connect, replace_context
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -439,6 +440,67 @@ def timeout_chart_api():
         q=request.args.get("q") or "",
     )
     return jsonify(payload)
+
+
+_ROOM_RE = re.compile(r"^[A-Za-z0-9_\-]{6,80}$")
+
+
+@app.route("/api/timeout/events")
+def timeout_events_api():
+    db = _db_path()
+    if not os.path.isfile(db):
+        return jsonify({"total": 0, "events": []})
+    try:
+        limit = max(1, min(500, int(request.args.get("limit") or 200)))
+        offset = max(0, int(request.args.get("offset") or 0))
+    except ValueError:
+        abort(400)
+    conn = open_ro(db)
+    try:
+        payload = stc_live.query_events(
+            conn,
+            theater=(request.args.get("theater") or "").strip(),
+            q=(request.args.get("q") or "").strip(),
+            store=(request.args.get("store") or "").strip(),
+            rule_id=(request.args.get("rule_id") or "").strip(),
+            room_id=(request.args.get("room_id") or "").strip(),
+            start=(request.args.get("start") or "").strip(),
+            end=(request.args.get("end") or "").strip(),
+            limit=limit, offset=offset,
+        )
+    except ValueError:
+        abort(400, description="日期格式应为 YYYY-MM-DD")
+    finally:
+        conn.close()
+    return jsonify(payload)
+
+
+@app.route("/api/group/<room_id>/members")
+def group_members_api(room_id):
+    if not _ROOM_RE.match(room_id):
+        abort(400)
+    try:
+        return jsonify({"members": stc_live.group_members(ROOT, room_id)})
+    except Exception as exc:
+        logging.exception("拉取群成员失败")
+        return jsonify({"error": "SCRM 群成员接口暂不可用：" + type(exc).__name__}), 502
+
+
+@app.route("/api/timeout/context")
+def timeout_context_api():
+    room_id = (request.args.get("room_id") or "").strip()
+    at = (request.args.get("at") or "").strip()
+    if not _ROOM_RE.match(room_id) or not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", at):
+        abort(400)
+    try:
+        minutes = int(request.args.get("minutes") or 30)
+    except ValueError:
+        minutes = 30
+    try:
+        return jsonify(stc_live.chat_context(ROOT, room_id, at, min(max(minutes, 1), 240)))
+    except Exception as exc:
+        logging.exception("拉取会话上下文失败")
+        return jsonify({"error": "SCRM 会话存档接口暂不可用：" + type(exc).__name__}), 502
 
 
 @app.route("/api/timeout/import", methods=["POST"])

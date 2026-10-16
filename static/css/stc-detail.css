@@ -1,0 +1,45 @@
+/* 超时明细 / 群成员 / 会话上下文抽屉（antd Drawer 风格） */
+.sd-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1200;opacity:0;transition:opacity .2s}
+.sd-mask.on{opacity:1}
+.sd-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);background:#fff;z-index:1201;display:flex;flex-direction:column;box-shadow:-6px 0 16px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .25s}
+.sd-drawer.on{transform:none}
+.sd-head{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #f0f0f0;min-height:56px}
+.sd-head h3{flex:1;margin:0;font-size:16px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.sd-x,.sd-back{flex:none;width:32px;height:32px;border:0;background:transparent;border-radius:6px;cursor:pointer;font-size:18px;line-height:32px;color:rgba(0,0,0,.45)}
+.sd-x:hover,.sd-back:hover{background:rgba(0,0,0,.06);color:rgba(0,0,0,.88)}
+.sd-body{flex:1;overflow:auto;padding:12px 16px 24px;-webkit-overflow-scrolling:touch}
+.sd-sub{color:rgba(0,0,0,.45);font-size:13px;margin:0 0 10px}
+.sd-list{list-style:none;margin:0;padding:0}
+.sd-item{border:1px solid #f0f0f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff}
+.sd-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13px;color:rgba(0,0,0,.65)}
+.sd-title{font-size:14px;color:rgba(0,0,0,.88);font-weight:500;overflow-wrap:anywhere}
+.sd-link{color:#1677ff;background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left;overflow-wrap:anywhere}
+.sd-link:hover{color:#4096ff;text-decoration:underline}
+.sd-btn{height:28px;padding:0 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:rgba(0,0,0,.88);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.sd-btn:hover{color:#4096ff;border-color:#4096ff}
+.sd-ctx{margin-top:8px;border-top:1px dashed #f0f0f0;padding-top:8px}
+.sd-msg{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:6px 8px;border-radius:6px;font-size:13px}
+.sd-msg + .sd-msg{margin-top:2px}
+.sd-msg .who{font-weight:500;color:rgba(0,0,0,.88)}
+.sd-msg .when{color:rgba(0,0,0,.45);text-align:right}
+.sd-msg .txt{grid-column:1/-1;color:rgba(0,0,0,.75);white-space:pre-wrap;overflow-wrap:anywhere}
+.sd-msg.trigger{background:#fff7e6;border:1px solid #ffd591}
+.sd-msg.role-staff .who{color:#1677ff}
+.sd-msg.role-robot .who{color:#722ed1}
+.sd-tag{display:inline-block;padding:0 7px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;line-height:20px;background:#fafafa}
+.sd-tag.customer{color:#d46b08;background:#fff7e6;border-color:#ffd591}
+.sd-tag.staff{color:#0958d9;background:#e6f4ff;border-color:#91caff}
+.sd-tag.robot{color:#531dab;background:#f9f0ff;border-color:#d3adf7}
+.sd-tag.warn{color:#cf1322;background:#fff1f0;border-color:#ffa39e}
+.sd-empty,.sd-err{padding:24px 0;text-align:center;color:rgba(0,0,0,.45)}
+.sd-err{color:#cf1322}
+.sd-more{display:flex;justify-content:center;margin-top:8px}
+.sd-spin{display:inline-block;width:16px;height:16px;border:2px solid #e6f4ff;border-top-color:#1677ff;border-radius:50%;animation:sdspin .8s linear infinite;vertical-align:-3px;margin-right:6px}
+@keyframes sdspin{to{transform:rotate(360deg)}}
+.sd-clickable{cursor:pointer}
+.sd-clickable:hover h4,.sd-clickable:hover .value{color:#1677ff}
+.sd-clickable:focus-visible{outline:2px solid #91caff;outline-offset:2px}
+a.sd-num,button.sd-num{color:#1677ff;background:none;border:0;padding:0;font:inherit;cursor:pointer}
+a.sd-num:hover,button.sd-num:hover{text-decoration:underline}
+body.sd-lock{overflow:hidden}
+@media (max-width:600px){.sd-body{padding:10px 12px 24px}.sd-head{padding:12px}}
