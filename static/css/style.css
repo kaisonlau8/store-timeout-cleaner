@@ -881,3 +881,18 @@ body {
 @media (max-width: 400px) {
     .brand { font-size: 13px; }
 }
+
+/* 门店页折叠面板（Ant Design Collapse 风格） */
+.store-collapse { background: #fff; border: 1px solid #d9d9d9; border-radius: 8px; margin: 12px 0; padding: 0; overflow: hidden; }
+.store-collapse > summary { list-style: none; display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 12px 16px; cursor: pointer; background: #fafafa; color: rgba(0,0,0,.88); font-weight: 600; }
+.store-collapse > summary::-webkit-details-marker { display: none; }
+.store-collapse .ant-collapse-arrow { width: 8px; height: 8px; border-right: 2px solid rgba(0,0,0,.45); border-bottom: 2px solid rgba(0,0,0,.45); transform: rotate(-45deg); transition: transform .2s; flex: none; }
+.store-collapse[open] > summary .ant-collapse-arrow { transform: rotate(45deg); }
+.store-collapse[open] > summary { border-bottom: 1px solid #f0f0f0; }
+.store-collapse .ant-collapse-title { flex: none; }
+.store-collapse .ant-collapse-extra { margin-left: auto; font-weight: 400; font-size: 12px; color: rgba(0,0,0,.45); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.store-collapse .store-count { margin-left: auto; background: #1677ff; }
+.store-collapse .ant-collapse-content { padding: 12px 16px; }
+.store-collapse .ant-collapse-content > .month-selector { margin: 0; }
+.store-collapse > summary::after { display: none !important; content: none !important; }
+.store-collapse > summary .store-count, .store-collapse > summary .ant-collapse-extra { margin-left: auto; }
