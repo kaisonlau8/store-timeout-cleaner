@@ -13,6 +13,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request
 
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
+from score_web import register_score
 from timeout_excel import ExcelImportError, import_excel_file, parse_filename_range, scan_input_dir
 from timeout_query import query_chart, query_meta
 from timeout_store import connect, replace_context
@@ -401,6 +402,9 @@ def timeout_export_csv():
         mimetype="text/csv; charset=utf-8-sig",
         headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(filename)},
     )
+
+
+register_score(app, ROOT)
 
 
 if __name__ == "__main__":

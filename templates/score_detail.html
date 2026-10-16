@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>超时明细{% if detail and detail.name %} · {{ detail.name }}{% endif %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
+    <style>{{ ds_css()|safe }}</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .msg-cell { max-width: 420px; white-space: pre-wrap; word-break: break-word; }
+        .score-note { margin: 0 0 12px; color: rgba(0,0,0,.65); font-size: 13px; }
+    </style>
+</head>
+<body>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
+        <nav class="page-nav" aria-label="主导航">
+            <a class="page-nav-link" href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
+            <a class="page-nav-link" href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>
+            <a class="page-nav-link active" href="/score"><svg class="ai" aria-hidden="true"><use href="#i-audit"/></svg>超时评分</a>
+        </nav>
+        <span class="cl-meta">{{ start }} ~ {{ end }}</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header">
+            <div class="ant-page-header-heading">
+                <h1>{{ detail.name if detail else '超时明细' }}</h1>
+                <div class="ant-page-header-sub">
+                    <a href="/score?start={{ start }}&amp;end={{ end }}">返回评分列表</a>
+                    {% if detail and detail.store %}
+                        · {{ detail.store.tier or '—' }} · {{ '%.2f'|format(detail.store.score) }} 分
+                        · 原始 {{ detail.store.raw }} / 有效 {{ detail.store.valid }}
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
+        {% if not detail or not detail.store %}
+        <div class="no-data">
+            <div class="ant-empty-title">没有这家店的评分</div>
+            <div class="ant-empty-desc">请从评分列表点进门店。当前区间 {{ start }} ~ {{ end }}。</div>
+        </div>
+        {% else %}
+        {% if detail.store.remark %}<p class="score-note">{{ detail.store.remark }}</p>{% endif %}
+
+        <div class="stat-block store-block">
+            <div class="table-head"><h3>计入的超时</h3></div>
+            <div class="store-table-wrapper">
+                <table class="store-table">
+                    <thead>
+                        <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>来源</th><th>超时消息</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for ev in detail.counted %}
+                        <tr>
+                            <td>{{ ev.created_at }}</td>
+                            <td>{{ ev.room_name }}</td>
+                            <td>{{ ev.rule_name or '—' }}</td>
+                            <td>{% if ev.shared %}同城零售中心{% else %}本店{% endif %}</td>
+                            <td class="msg-cell">{{ ev.message or '—' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" style="text-align:center" class="cl-muted">这个时间范围内没有计入的超时</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="stat-block store-block">
+            <div class="table-head"><h3>剔除的超时</h3></div>
+            <div class="store-table-wrapper">
+                <table class="store-table">
+                    <thead>
+                        <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>剔除原因</th><th>来源</th><th>超时消息</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for ev in detail.excluded %}
+                        <tr>
+                            <td>{{ ev.created_at }}</td>
+                            <td>{{ ev.room_name }}</td>
+                            <td>{{ ev.rule_name or '—' }}</td>
+                            <td>{{ ev.reason }}</td>
+                            <td>{% if ev.shared %}同城零售中心{% else %}本店{% endif %}</td>
+                            <td class="msg-cell">{{ ev.message or '—' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" style="text-align:center" class="cl-muted">没有被剔除的超时</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <script>{{ ds_cards()|safe }}</script>
+</body>
+</html>

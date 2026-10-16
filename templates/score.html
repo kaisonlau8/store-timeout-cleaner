@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>门店超时评分</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
+    <style>{{ ds_css()|safe }}</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .score-pill { display: inline-block; min-width: 3em; padding: 0 8px; border-radius: 4px; font-weight: 600; text-align: center; }
+        .score-100 { background: #f6ffed; color: #237804; }
+        .score-80 { background: #e6f4ff; color: #0958d9; }
+        .score-60 { background: #fff7e6; color: #d46b08; }
+        .score-0 { background: #fafafa; color: rgba(0,0,0,.45); }
+        .score-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .score-note { margin: 0 0 12px; color: rgba(0,0,0,.65); font-size: 13px; }
+        .store-table td.num, .store-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .score-list { max-height: none; }
+    </style>
+</head>
+<body>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
+        <nav class="page-nav" aria-label="主导航">
+            <a class="page-nav-link" href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
+            <a class="page-nav-link" href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>
+            <a class="page-nav-link active" href="/score"><svg class="ai" aria-hidden="true"><use href="#i-audit"/></svg>超时评分</a>
+        </nav>
+        <span class="cl-meta">{{ report.start }} ~ {{ report.end }}</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header">
+            <div class="ant-page-header-heading">
+                <h1>门店超时评分</h1>
+                <div class="ant-page-header-sub">按选定日期重算收缩率。默认上一自然季度。</div>
+            </div>
+            <div class="ant-page-header-actions score-actions">
+                <a class="export-link" href="/api/score/export.csv?start={{ report.start }}&amp;end={{ report.end }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 CSV</a>
+                <a class="export-link" href="/api/score/export.xlsx?start={{ report.start }}&amp;end={{ report.end }}"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
+            </div>
+        </header>
+
+        <form class="month-selector timeout-filters" method="get" action="/score">
+            <div class="selector-group">
+                <label for="start-date">开始</label>
+                <input type="date" id="start-date" name="start" value="{{ report.start }}">
+            </div>
+            <div class="selector-group">
+                <label for="end-date">结束</label>
+                <input type="date" id="end-date" name="end" value="{{ report.end }}">
+            </div>
+            <button class="filter-btn" type="submit">查询</button>
+        </form>
+
+        <p class="score-note">
+            超时率 = (有效超时 + {{ report.m }}×μ) / (机器人群数 + {{ report.m }}) × 100，
+            μ = 参与排名门店有效超时 / 机器人群 = {{ '%.3f'|format(report.mu_per_100) }} / 百群。
+            按超时率从低到高，名次 ≤ 20% 为 100 分，≤ 50% 为 80 分，其余 60 分；同率并列取较高档。
+            参与排名 {{ report.ranked }} 家。未归店超时 {{ report.unmatched }} 条。
+        </p>
+        {% if report.missing_message %}
+        <p class="score-note">有 {{ report.missing_message }} 条超时对不上消息正文，话术、寒暄和仅 @ 规则已跳过，仍会做重复触发和 30 分钟合并。</p>
+        {% endif %}
+
+        <div class="stat-block store-block">
+            <div class="table-head"><h3>门店得分</h3></div>
+            <div class="store-table-wrapper score-list">
+                <table class="store-table">
+                    <thead>
+                        <tr>
+                            <th data-card-title>门店名称</th>
+                            <th>门店编码</th>
+                            <th>战区</th>
+                            <th class="num">机器人群数</th>
+                            <th class="num">原始超时</th>
+                            <th class="num">有效超时</th>
+                            <th class="num">超时率</th>
+                            <th>分档</th>
+                            <th class="num">得分</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in report.stores %}
+                        <tr>
+                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}">{{ row.name }}</a></td>
+                            <td>{{ row.code or '—' }}</td>
+                            <td>{{ row.theater or '—' }}</td>
+                            <td class="num">{{ row.robot_group_count }}</td>
+                            <td class="num">{{ row.raw }}</td>
+                            <td class="num">{{ row.valid }}</td>
+                            <td class="num">{% if row.kind in ['zero', 'avg'] or row.rate is none %}—{% else %}{{ '%.2f'|format(row.rate) }}{% endif %}</td>
+                            <td>{{ row.tier or '—' }}</td>
+                            <td class="num"><span class="score-pill {% if row.score >= 100 %}score-100{% elif row.score >= 80 %}score-80{% elif row.score >= 60 %}score-60{% else %}score-0{% endif %}">{{ '%.2f'|format(row.score) }}</span></td>
+                            <td>{{ row.remark or '—' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="10" style="text-align:center" class="cl-muted">暂无门店。请先从 SCRM 同步客户群，并导入超时 Excel。</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>{{ ds_cards()|safe }}</script>
+</body>
+</html>
