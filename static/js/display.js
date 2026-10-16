@@ -1,12 +1,11 @@
 function coverageStoreHref(name) {
     const params = new URLSearchParams();
-    params.set('name', name);
     const current = new URLSearchParams(window.location.search);
     const theater = (current.get('theater') || '').trim();
     const q = (current.get('q') || '').trim();
     if (theater) params.set('theater', theater);
-    if (q) params.set('q', q);
-    return '/coverage/store?' + params.toString();
+    if (q) params.set('back_q', q);
+    return '/store/' + encodeURIComponent(name) + (params.size ? '?' + params.toString() : '');
 }
 
 document.addEventListener('DOMContentLoaded', () => {

@@ -845,6 +845,22 @@ body {
     margin-bottom: 24px;
 }
 
+.coverage-groups .store-table-wrapper {
+    max-height: none;
+}
+
+.coverage-groups .store-table td {
+    overflow-wrap: anywhere;
+}
+
+.store-filters .store-search {
+    flex: 1 1 100%;
+}
+
+.store-filters input[type="search"] {
+    width: 100%;
+}
+
 .coverage-groups .store-table td:last-child {
     text-align: left;
     font-weight: 500;

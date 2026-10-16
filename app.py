@@ -6,17 +6,19 @@ import logging
 import os
 import re
 import threading
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from flask import Flask, Response, jsonify, redirect, render_template, request
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request
 
 from coverage_query import (
     allowed_store_names,
     build_coverage_view,
+    collect_store_names,
     coverage_back_href,
     coverage_store_href,
+    load_directory,
     store_coverage_detail,
 )
 from group_keyword import KeywordError, open_ro, query_keyword_groups
@@ -271,23 +273,53 @@ def index():
 @app.route("/coverage/store")
 def coverage_store_page():
     name = (request.args.get("name") or "").strip()
+    return redirect(coverage_store_href(name, request.args.get("theater"), request.args.get("q")) if name else "/", code=302)
+
+
+@app.route("/store/<path:store_key>")
+def store_page(store_key):
+    directory = load_directory(_db_path())
+    data = load_data()
+    names = {row["name"] for row in directory} | collect_store_names(data)
+    name = store_key if store_key in names else next(
+        (row["name"] for row in directory if row.get("code") and row["code"] == store_key), store_key
+    )
     theater = (request.args.get("theater") or "").strip()
     q = (request.args.get("q") or "").strip()
+    filters = {key: (request.args.get(key) or "").strip() for key in ("group_from", "group_to", "date_from", "date_to")}
+    for key, value in filters.items():
+        if value:
+            try:
+                filters[key] = date.fromisoformat(value).isoformat()
+            except ValueError:
+                abort(400, description="日期格式应为 YYYY-MM-DD")
     detail = None
     db_path = _db_path()
     available = os.path.isfile(db_path)
     if available and name:
         conn = open_ro(db_path)
         try:
-            detail = store_coverage_detail(conn, name)
+            detail = store_coverage_detail(conn, name, q=q, **filters)
         finally:
             conn.close()
+    if detail is None and name in names:
+        national = ((data or {}).get("stats") or {}).get("national") or {}
+        group_count = int(((national.get("all") or {}).get("store_stats") or {}).get(name) or 0)
+        robot_count = int(((national.get("filter") or {}).get("store_stats") or {}).get(name) or 0)
+        detail = {
+            "store": name, "theater": "", "group_count": group_count,
+            "robot_count": robot_count, "pending_count": max(0, group_count - robot_count),
+            "pending": [], "robot": [], "events": [], "snapshot_only": True,
+        }
     return render_template(
         "coverage_store.html",
         detail=detail,
         name=name,
         available=available,
-        back_href=coverage_back_href(theater, q),
+        back_href=coverage_back_href(theater, request.args.get("back_q") or ""),
+        q=q,
+        filters=filters,
+        reset_href=coverage_store_href(name, theater, request.args.get("back_q")),
         nav_active="coverage",
     )
 
