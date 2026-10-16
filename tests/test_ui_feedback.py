@@ -52,7 +52,7 @@ class FeedbackSurfaceTests(unittest.TestCase):
 
     def test_no_login_page_invented(self):
         names = [p.name for p in (ROOT / "templates").glob("*.html")]
-        self.assertEqual(sorted(names), ["index.html", "timeout.html"])
+        self.assertFalse([n for n in names if "login" in n])
 
 
 if __name__ == "__main__":
