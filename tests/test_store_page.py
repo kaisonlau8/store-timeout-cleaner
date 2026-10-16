@@ -1,6 +1,8 @@
 """独立门店路由、旧库兼容及两类日期筛选。"""
 
 import importlib
+import unittest
+from pathlib import Path
 import json
 import sqlite3
 from unittest.mock import patch
@@ -54,7 +56,7 @@ def body(client, **query):
 
 
 def section(html, section_id):
-    return html.split(f'id="{section_id}"', 1)[1].split('<div class="stat-block', 1)[0]
+    return html.split(f'id="{section_id}"', 1)[1].split('</details>', 1)[0]
 
 
 def test_new_route_full_lists_and_events(store_client):
@@ -165,3 +167,13 @@ def test_old_schema_read_and_migration(tmp_path):
     ])
     assert conn.execute("SELECT create_time FROM chat_store").fetchone()[0] == "2026-10-16T12:30:00+08:00"
     conn.close()
+
+
+class StoreCollapseTemplateTests(unittest.TestCase):
+    def test_sections_are_collapsible(self):
+        html = (Path(__file__).resolve().parent.parent / "templates" / "coverage_store.html").read_text(encoding="utf-8")
+        for sid in ("store-filter-panel", "pending-groups", "robot-groups", "timeout-events"):
+            self.assertIn(f'id="{sid}"', html)
+        self.assertEqual(html.count('<details class="ant-collapse store-collapse stat-block'), 3)
+        self.assertIn("store-count", html)
+        self.assertIn("summary-cards", html)
