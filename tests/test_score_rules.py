@@ -114,6 +114,10 @@ class ClassifyEventTests(unittest.TestCase):
         self.assertEqual(rows[0]["reason"], REASON_LLM)
         self.assertEqual(rows[1]["reason"], REASON_CLOSE)
 
+    def test_llm_reason_is_prefixed(self):
+        rows = classify_events([ev("群A", T0, "车已到店", llm_exclude=True, llm_reason="非提问告知")])
+        self.assertEqual(rows[0]["reason"], "LLM复核剔除: 非提问告知")
+
     def test_input_order_preserved(self):
         later = ev("群A", T0 + timedelta(minutes=5), "后写但更早录入", "b")
         earlier = ev("群A", T0, "先发生", "a")

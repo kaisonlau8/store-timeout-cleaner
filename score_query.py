@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from score_llm import apply_verdicts, cache_get, llm_configured, review_status
 from score_math import MERGE_MAP, StoreInput, score_stores
 from score_rules import classify_events
 from timeout_excel import _cell, _msg_id, _parse_trigger_time
@@ -61,8 +62,8 @@ def parse_range(
     return start_d, end_d
 
 
-def build_report(root: str, start: date, end: date) -> dict[str, Any]:
-    events, unmatched, missing_message = _classified_events(root, start, end)
+def build_report(root: str, start: date, end: date, *, use_llm: bool | None = None) -> dict[str, Any]:
+    events, unmatched, missing_message, llm_meta = prepare_events(root, start, end, use_llm=use_llm)
     stores = _score_from_events(root, events)
     mu = stores[0]["mu"] if stores else 0.0
     ranked = sum(1 for row in stores if row["kind"] in ("", "merge"))
@@ -76,13 +77,51 @@ def build_report(root: str, start: date, end: date) -> dict[str, Any]:
         "unmatched": unmatched,
         "missing_message": missing_message,
         "stores": _sort_rows(stores),
+        **llm_meta,
     }
 
 
-def store_detail(root: str, store: str, start: date, end: date) -> dict[str, Any]:
-    report = build_report(root, start, end)
+def load_rule_events(root: str, start: date, end: date) -> tuple[list[dict[str, Any]], int, int]:
+    events, unmatched, missing, _meta = prepare_events(root, start, end, use_llm=False)
+    return events, unmatched, missing
+
+
+def prepare_events(
+    root: str,
+    start: date,
+    end: date,
+    *,
+    use_llm: bool | None = None,
+) -> tuple[list[dict[str, Any]], int, int, dict[str, Any]]:
+    events, unmatched, missing_message = _classified_events(root, start, end)
+    pending = _pending_messages(events)
+    verdicts = cache_get(root, pending)
+    available = llm_configured(root)
+    if use_llm is None:
+        use_llm = available and any(text in verdicts for text in pending)
+    if use_llm:
+        apply_verdicts(events, verdicts)
+    meta = {
+        "llm_on": bool(use_llm),
+        "llm_available": available,
+        "llm_cached": sum(1 for text in pending if text in verdicts),
+        "llm_pending": len(pending),
+        "llm_job": review_status(root, start, end),
+    }
+    return events, unmatched, missing_message, meta
+
+
+def store_detail(
+    root: str,
+    store: str,
+    start: date,
+    end: date,
+    *,
+    use_llm: bool | None = None,
+) -> dict[str, Any]:
+    report = build_report(root, start, end, use_llm=use_llm)
     row = next((item for item in report["stores"] if item["name"] == store), None)
-    events, _, _ = _classified_events(root, start, end)
+    events, _, _, _ = prepare_events(root, start, end, use_llm=report["llm_on"])
     names = {store}
     shared_from: set[str] = set()
     target = MERGE_MAP.get(store)
@@ -114,6 +153,7 @@ def store_detail(root: str, store: str, start: date, end: date) -> dict[str, Any
         "start": start.isoformat(),
         "end": end.isoformat(),
         "missing_message": report["missing_message"],
+        "llm_on": report["llm_on"],
     }
 
 
@@ -132,16 +172,19 @@ def _score_from_events(root: str, events: list[dict[str, Any]]) -> list[dict[str
         name = (ev.get("store") or "").strip()
         if not name:
             continue
-        bucket = counts.setdefault(name, {"raw": 0, "valid": 0})
+        bucket = counts.setdefault(name, {"raw": 0, "valid": 0, "llm_excluded": 0})
         bucket["raw"] += 1
-        if not ev.get("reason"):
+        reason = ev.get("reason") or ""
+        if reason.startswith("LLM复核剔除"):
+            bucket["llm_excluded"] += 1
+        elif not reason:
             bucket["valid"] += 1
 
     directory = _store_directory(root)
     inputs: list[StoreInput] = []
     seen: set[str] = set()
     for name, info in directory.items():
-        bucket = counts.get(name) or {"raw": 0, "valid": 0}
+        bucket = counts.get(name) or {"raw": 0, "valid": 0, "llm_excluded": 0}
         inputs.append(
             StoreInput(
                 name=name,
@@ -169,7 +212,31 @@ def _score_from_events(root: str, events: list[dict[str, Any]]) -> list[dict[str
     for src, dst in MERGE_MAP.items():
         if src not in seen and dst in seen:
             inputs.append(StoreInput(name=src, in_scrm=False))
-    return score_stores(inputs)
+    scored = score_stores(inputs)
+    for row in scored:
+        excluded = int(counts.get(row["name"], {}).get("llm_excluded", 0))
+        if row["kind"] == "merge":
+            target = MERGE_MAP.get(row["name"])
+            excluded += int(counts.get(target, {}).get("llm_excluded", 0))
+        row["llm_excluded"] = excluded
+    return scored
+
+
+def _pending_messages(events: list[dict[str, Any]]) -> list[str]:
+    seen: set[str] = set()
+    texts: list[str] = []
+    for event in events:
+        if event.get("reason"):
+            continue
+        msg = event.get("msg")
+        if not isinstance(msg, str):
+            continue
+        text = msg.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        texts.append(text)
+    return texts
 
 
 def _store_directory(root: str) -> dict[str, dict[str, Any]]:

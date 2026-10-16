@@ -91,12 +91,21 @@ def _mark_bursts(rows: list[dict[str, Any]], order: list[int]) -> None:
             last[room] = moment
 
 
+def format_llm_reason(detail: str) -> str:
+    text = (detail or "").strip()
+    if not text or text == REASON_LLM:
+        return REASON_LLM
+    if text.startswith(REASON_LLM):
+        return text
+    return f"{REASON_LLM}: {text}"
+
+
 def _mark_llm(rows: list[dict[str, Any]]) -> None:
     for row in rows:
         if row["reason"]:
             continue
         if row.get("llm_exclude"):
-            row["reason"] = str(row.get("llm_reason") or REASON_LLM)
+            row["reason"] = format_llm_reason(str(row.get("llm_reason") or ""))
 
 
 def _room(row: dict[str, Any]) -> str:

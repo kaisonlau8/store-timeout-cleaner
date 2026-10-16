@@ -13,6 +13,7 @@ COLUMNS = (
     ("robot_group_count", "机器人群数"),
     ("raw", "原始超时"),
     ("valid", "有效超时"),
+    ("llm_excluded", "LLM剔除"),
     ("rate", "超时率"),
     ("rank", "排名"),
     ("tier", "分档"),
@@ -61,4 +62,6 @@ def _cell(row: dict[str, Any], key: str) -> Any:
         return round(value, 2)
     if key == "code":
         return row.get("code") or ""
+    if key == "llm_excluded":
+        return int(row.get("llm_excluded") or 0)
     return row.get(key, "")
