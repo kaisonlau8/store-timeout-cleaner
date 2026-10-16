@@ -82,7 +82,7 @@ def build_report(root: str, start: date, end: date, *, use_llm: bool | None = No
 
 
 def load_rule_events(root: str, start: date, end: date) -> tuple[list[dict[str, Any]], int, int]:
-    events, unmatched, missing, _meta = prepare_events(root, start, end, use_llm=False)
+    events, unmatched, missing, _meta = prepare_events(root, start, end, use_llm=False, kpi_only=False)
     return events, unmatched, missing
 
 
@@ -92,8 +92,9 @@ def prepare_events(
     end: date,
     *,
     use_llm: bool | None = None,
+    kpi_only: bool = True,
 ) -> tuple[list[dict[str, Any]], int, int, dict[str, Any]]:
-    events, unmatched, missing_message = _classified_events(root, start, end)
+    events, unmatched, missing_message = _classified_events(root, start, end, kpi_only=kpi_only)
     pending = _pending_messages(events)
     verdicts = cache_get(root, pending)
     available = llm_configured(root)
@@ -271,8 +272,13 @@ def _store_directory(root: str) -> dict[str, dict[str, Any]]:
 
 
 def _classified_events(
-    root: str, start: date, end: date
+    root: str, start: date, end: date, *, kpi_only: bool = True
 ) -> tuple[list[dict[str, Any]], int, int]:
+    """kpi_only=True（评分/KPI/导出）时只取 counts_for_kpi=1 的规则命中；超时机器人浏览页用 False。"""
+    skip: set[str] = set()
+    if kpi_only:
+        from timeout_algo import non_kpi_rules
+        skip = non_kpi_rules(root)[0]
     conn = _open(root)
     if conn is None:
         return [], 0, 0
@@ -296,6 +302,8 @@ def _classified_events(
     missing = 0
     unmatched = 0
     for row in db_rows:
+        if row["rule_id"] in skip:
+            continue
         msg = row["content"] if row["content"] else messages.get(row["msg_id"])
         if msg is None:
             missing += 1

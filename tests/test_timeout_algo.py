@@ -87,3 +87,32 @@ class AlgoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KpiFlagTests(AlgoTests):
+    def test_ten_minute_rule_is_display_only_and_flag_is_editable(self):
+        from score_query import _classified_events
+        conn = timeout_algo.open_db(self.root)
+        flags = timeout_algo.kpi_rule_flags(conn)
+        self.assertFalse(flags[timeout_algo.NON_KPI_SEED])
+        self.assertEqual(sum(flags.values()), 1)
+        conn.execute("INSERT INTO timeout_event(msg_id, rule_id, rule_name, room_id, store, created_at, source, content, exclude_reason) "
+                     "VALUES ('m1', ?, '10 分钟未回复预警', 'r1', '甲店', '2026-07-01 10:00:00', 'api', '请问到店时间', ''),"
+                     "('m1', '2055182790919555459', '30 分钟未回复预警', 'r1', '甲店', '2026-07-01 10:00:00', 'api', '请问到店时间', '')",
+                     (timeout_algo.NON_KPI_SEED,))
+        conn.commit()
+        kpi, _, _ = _classified_events(self.root, date(2026, 7, 1), date(2026, 7, 1))
+        self.assertEqual([e["rule_id"] for e in kpi], ["2055182790919555459"])
+        self.assertEqual(kpi[0].get("reason") or "", "")  # 30 分钟那条不再被当成「重复触发」
+        allev, _, _ = _classified_events(self.root, date(2026, 7, 1), date(2026, 7, 1), kpi_only=False)
+        self.assertEqual(len(allev), 2)
+        ten = next(g for g in timeout_algo.list_rules(conn) if g["current"]["minutes"] == 10)["current"]
+        timeout_algo.save_rule(conn, {"name": ten["name"], "minutes": 10, "days": ten["days"], "start": "09:00", "end": "20:00",
+                                      "effective_from": "2026-03-23", "enabled": True, "counts_for_kpi": True},
+                               rule_key=timeout_algo.NON_KPI_SEED, actor="t")
+        self.assertTrue(timeout_algo.kpi_rule_flags(conn)[timeout_algo.NON_KPI_SEED])
+        # 不传 counts_for_kpi 时沿用原设置
+        timeout_algo.save_rule(conn, {"name": ten["name"], "minutes": 10, "days": ten["days"], "start": "09:00", "end": "20:00",
+                                      "effective_from": "2026-03-23"}, rule_key=timeout_algo.NON_KPI_SEED, actor="t")
+        self.assertTrue(timeout_algo.kpi_rule_flags(conn)[timeout_algo.NON_KPI_SEED])
+        conn.close()

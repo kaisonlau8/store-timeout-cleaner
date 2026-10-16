@@ -166,6 +166,29 @@ def _inject_admin():
         return {"is_admin": False}
 
 
+NON_KPI_TAG = '<span class="ant-tag ant-tag-warning kpi-off" title="该规则只在超时机器人中展示，不计入 KPI/评分">仅展示，不计 KPI</span>'
+
+
+@app.context_processor
+def _inject_kpi():
+    try:
+        _keys, names = timeout_algo.non_kpi_rules(ROOT)
+    except Exception:
+        names = set()
+    return {"non_kpi_names": sorted(names)}
+
+
+@app.template_filter("kpi_tag")
+def _kpi_tag(rule_name):
+    from markupsafe import Markup
+    try:
+        names = timeout_algo.non_kpi_rules(ROOT)[1]
+    except Exception:
+        return Markup("")
+    parts = [n.strip() for n in str(rule_name or "").split(" / ")]
+    return Markup(" " + NON_KPI_TAG) if any(p in names for p in parts) else Markup("")
+
+
 try:
     timeout_algo.open_db(ROOT).close()  # 建表/迁移/播种规则
 except Exception:

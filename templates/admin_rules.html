@@ -43,7 +43,7 @@
             <div class="table-head"><h3>规则列表</h3><span class="cl-muted" id="archive-info"></span></div>
             <div class="store-table-wrapper">
                 <table class="store-table rules-table" id="rules-table">
-                    <thead><tr><th data-card-title>规则名称</th><th>超时</th><th>生效星期</th><th>时段</th><th>生效日期</th><th>状态</th><th>操作</th></tr></thead>
+                    <thead><tr><th data-card-title>规则名称</th><th>超时</th><th>生效星期</th><th>时段</th><th>生效日期</th><th>状态</th><th>KPI</th><th>操作</th></tr></thead>
                     <tbody><tr><td colspan="7" class="cl-muted" style="text-align:center">加载中</td></tr></tbody>
                 </table>
             </div>
@@ -72,6 +72,7 @@
             <label>生效日期<input name="effective_from" type="date" required></label>
             <p class="cl-muted rule-tip" id="rule-tip">修改时：生效日之前的历史仍按旧版本计算；生效日早于等于当前版本时直接覆盖当前版本。</p>
             <label class="rule-check"><input type="checkbox" name="enabled" checked> 启用</label>
+            <label class="rule-check"><input type="checkbox" name="counts_for_kpi" checked> 计入 KPI / 评分（不勾选则只在超时机器人中展示）</label>
             <label>备注<input name="note" maxlength="200" placeholder="可选"></label>
             <p class="error-msg" id="rule-error" hidden></p>
             <div class="rule-modal-foot">
@@ -81,7 +82,7 @@
         </form>
     </div>
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

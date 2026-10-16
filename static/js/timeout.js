@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cardHtml(
                 rule.rule_name || rule.rule_id,
                 rule.triggers || 0,
-                '消息 ' + (rule.messages || 0) + ' · 群 ' + (rule.rooms || 0) + ' · 点击看明细',
+                (window.stcKpiTag && window.stcKpiTag(rule.rule_name) ? '仅展示，不计 KPI · ' : '') + '消息 ' + (rule.messages || 0) + ' · 群 ' + (rule.rooms || 0) + ' · 点击看明细',
                 { rule_id: rule.rule_id }
             )
         ).join('');
@@ -236,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = document.querySelector('#store-table tbody');
         let head = '<tr><th>排名</th><th data-card-title>门店</th><th>战区</th><th>计入消息</th><th>触发群数</th><th>规则次数</th>';
         rules.forEach((rule) => {
-            head += '<th>' + escapeHtml(rule.rule_name || rule.rule_id) + '</th>';
+            head += '<th>' + escapeHtml(rule.rule_name || rule.rule_id) + (window.stcKpiTag ? window.stcKpiTag(rule.rule_name) : '') + '</th>';
         });
         head += '</tr>';
         thead.innerHTML = head;
