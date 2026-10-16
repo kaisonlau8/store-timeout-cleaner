@@ -6,7 +6,7 @@ import sqlite3
 from typing import Any
 from urllib.parse import quote
 
-from timeout_store import get_meta
+from list_filters import store_query_match
 
 
 class KeywordError(ValueError):
@@ -35,12 +35,14 @@ def query_keyword_groups(
     keyword: str,
     theater: str | None = None,
     only_robot: bool = False,
+    store_q: str | None = None,
 ) -> dict[str, Any]:
-    """按群名子串统计。theater 过滤作用于所有统计；空关键字抛 KeywordError。"""
+    """按群名子串统计。theater 与门店搜索同时作用于所有统计；空关键字抛 KeywordError。"""
     kw = str(keyword or "").strip()
     if not kw:
         raise KeywordError("关键字不能为空")
     theater = str(theater or "").strip()
+    store_q = str(store_q or "").strip()
     only_robot = bool(only_robot)
 
     where = ["instr(lower(group_name), lower(?)) > 0"]
@@ -66,6 +68,8 @@ def query_keyword_groups(
         )
     ]
     rows.sort(key=lambda r: r["group_name"])
+    if store_q:
+        rows = [row for row in rows if store_query_match(row["store"], "", store_q)]
 
     by_theater_map: dict[str, dict[str, Any]] = {}
     by_store_map: dict[str, dict[str, Any]] = {}
@@ -103,6 +107,7 @@ def query_keyword_groups(
     return {
         "keyword": kw,
         "theater": theater,
+        "q": store_q,
         "only_robot": only_robot,
         "total": len(rows),
         "robot_total": sum(row["in_robot"] for row in rows),

@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
 </head>
 <body>
@@ -69,16 +69,16 @@
             </div>
         </div>
 
-        <div class="month-selector timeout-filters">
+        <div class="month-selector timeout-filters list-filters">
             <div class="selector-group">
-                <label>战区</label>
+                <label for="theater-select">战区</label>
                 <select id="theater-select">
                     <option value="">全国 / 全部战区</option>
                 </select>
             </div>
             <div class="selector-group">
-                <label>门店</label>
-                <input id="store-input" list="store-list" placeholder="全部或输入店名" autocomplete="off">
+                <label for="store-input">门店</label>
+                <input id="store-input" type="search" list="store-list" placeholder="门店名称或编码" autocomplete="off">
                 <datalist id="store-list"></datalist>
             </div>
             <div class="selector-group">
@@ -128,7 +128,7 @@
     </div>
     <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=5"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

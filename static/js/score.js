@@ -37,3 +37,26 @@
 
   poll();
 })();
+
+(function () {
+  var input = document.getElementById("detail-q");
+  if (!input) return;
+
+  function apply() {
+    var q = input.value.trim().toLowerCase();
+    document.querySelectorAll(".store-table tbody tr").forEach(function (tr) {
+      if (tr.querySelector("td[colspan]")) return;
+      tr.hidden = !!(q && tr.textContent.toLowerCase().indexOf(q) < 0);
+    });
+  }
+
+  input.addEventListener("input", apply);
+  input.addEventListener("change", function () {
+    var params = new URLSearchParams(location.search);
+    if (input.value.trim()) params.set("dq", input.value.trim());
+    else params.delete("dq");
+    var qs = params.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+  });
+  if (input.value) apply();
+})();

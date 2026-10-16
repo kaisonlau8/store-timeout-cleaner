@@ -84,12 +84,33 @@ def _bucket_sql(grain: str) -> str:
     )
 
 
-def _scope_clause(scope: str, ident: str) -> tuple[str, list[Any]]:
-    if scope == "theater" and ident:
-        return " AND theater = ?", [ident]
-    if scope == "store" and ident:
-        return " AND store = ?", [ident]
-    return "", []
+def _scope_clause(
+    scope: str,
+    ident: str,
+    theater: str = "",
+    q: str = "",
+) -> tuple[str, list[Any]]:
+    """战区与门店搜索同时生效。未传 theater/q 时仍兼容 scope=theater|store。"""
+    clauses: list[str] = []
+    params: list[Any] = []
+    theater = (theater or "").strip()
+    q = (q or "").strip()
+    ident = (ident or "").strip()
+    if theater:
+        clauses.append("theater = ?")
+        params.append(theater)
+    elif scope == "theater" and ident:
+        clauses.append("theater = ?")
+        params.append(ident)
+    if q:
+        clauses.append("instr(lower(store), lower(?)) > 0")
+        params.append(q)
+    elif scope == "store" and ident:
+        clauses.append("store = ?")
+        params.append(ident)
+    if not clauses:
+        return "", []
+    return " AND " + " AND ".join(clauses), params
 
 
 def query_meta(root: str) -> dict[str, Any]:
@@ -161,6 +182,8 @@ def query_chart(
     grain: str = "month",
     start: str | None = None,
     end: str | None = None,
+    theater: str = "",
+    q: str = "",
 ) -> dict[str, Any]:
     if grain not in {"day", "month", "quarter"}:
         grain = "month"
@@ -190,6 +213,8 @@ def query_chart(
         "grain": grain,
         "scope": scope,
         "id": ident,
+        "theater": (theater or "").strip(),
+        "q": (q or "").strip(),
         "start": start_d.isoformat(),
         "end": end_d.isoformat(),
     }
@@ -197,7 +222,7 @@ def query_chart(
     if conn is None:
         return empty
     try:
-        extra, extra_params = _scope_clause(scope, ident)
+        extra, extra_params = _scope_clause(scope, ident, theater=theater, q=q)
         where = f"created_at >= ? AND created_at < ?{extra}"
         params: list[Any] = [start_sql, end_sql, *extra_params]
         bucket = _bucket_sql(grain)
@@ -351,6 +376,8 @@ def query_chart(
             "grain": grain,
             "scope": scope,
             "id": ident,
+            "theater": (theater or "").strip(),
+            "q": (q or "").strip(),
             "start": start_d.isoformat(),
             "end": end_d.isoformat(),
         }

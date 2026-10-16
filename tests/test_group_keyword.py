@@ -97,6 +97,16 @@ class QueryKeywordGroupsTests(unittest.TestCase):
         self.assertIsNone(data["synced_at"])  # 由 app 从 data.json 填充
         self.assertEqual(data["theaters"], ["华东战区", "华北战区", "武汉特区"])
 
+    def test_store_query_combines_with_theater(self):
+        data = query_keyword_groups(self.conn, "x700", theater="华东战区", store_q="上海")
+        self.assertEqual(data["q"], "上海")
+        self.assertEqual(data["total"], 2)
+        self.assertEqual([row["store"] for row in data["by_store"]], ["猛士汽车上海门店"])
+        self.assertEqual(data["theaters"], ["华东战区", "华北战区", "武汉特区"])
+        none = query_keyword_groups(self.conn, "x700", theater="华东战区", store_q="武汉")
+        self.assertEqual(none["total"], 0)
+        self.assertEqual(none["by_store"], [])
+
     def test_empty_keyword_raises(self):
         for bad in ("", "   ", None):
             with self.assertRaises(KeywordError):
@@ -134,7 +144,10 @@ class GroupsApiTests(unittest.TestCase):
     def test_page_ok(self):
         resp = self.client.get("/groups")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("群名统计", resp.get_data(as_text=True))
+        html = resp.get_data(as_text=True)
+        self.assertIn("群名统计", html)
+        self.assertIn("门店名称或编码", html)
+        self.assertIn('id="store-q"', html)
 
     def test_api_ok(self):
         resp = self.client.get("/api/groups/keyword?keyword=x700")
@@ -151,6 +164,14 @@ class GroupsApiTests(unittest.TestCase):
         payload = resp.get_json()
         self.assertEqual(payload["total"], 1)  # r3 X700 交付群
         self.assertEqual(payload["groups"][0]["group_name"], "X700 交付群")
+
+    def test_api_store_query_with_theater(self):
+        resp = self.client.get("/api/groups/keyword?keyword=x700&theater=%E5%8D%8E%E4%B8%9C%E6%88%98%E5%8C%BA&q=%E4%B8%8A%E6%B5%B7")
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        self.assertEqual(payload["total"], 2)
+        self.assertEqual(payload["q"], "上海")
+        self.assertEqual(payload["by_store"][0]["store"], "猛士汽车上海门店")
 
     def test_api_empty_keyword_400(self):
         resp = self.client.get("/api/groups/keyword?keyword=")

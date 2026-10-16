@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEFAULT_KEYWORD = 'X700-VIP';
     const keywordInput = document.getElementById('keyword-input');
     const theaterSelect = document.getElementById('theater-select');
+    const storeQuery = document.getElementById('store-q');
     const robotOnly = document.getElementById('robot-only');
     const queryBtn = document.getElementById('query-btn');
     const exportBtn = document.getElementById('export-btn');
@@ -27,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             keyword: (params.get('keyword') || '').trim() || DEFAULT_KEYWORD,
             theater: (params.get('theater') || '').trim(),
+            q: (params.get('q') || '').trim(),
             only_robot: params.get('only_robot') === '1',
         };
     }
@@ -35,15 +37,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             keyword: (keywordInput.value || '').trim(),
             theater: theatersFilled ? theaterSelect.value : initialTheater,
+            q: (storeQuery.value || '').trim(),
             only_robot: robotOnly.checked ? 1 : 0,
         };
     }
 
     function writeUrl(q) {
-        const params = new URLSearchParams();
+        const params = new URLSearchParams(location.search);
         if (q.keyword && q.keyword !== DEFAULT_KEYWORD) params.set('keyword', q.keyword);
+        else params.delete('keyword');
         if (q.theater) params.set('theater', q.theater);
+        else params.delete('theater');
+        if (q.q) params.set('q', q.q);
+        else params.delete('q');
         if (q.only_robot) params.set('only_robot', '1');
+        else params.delete('only_robot');
         const qs = params.toString();
         history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
     }
@@ -52,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams();
         params.set('keyword', q.keyword || '');
         params.set('theater', q.theater || '');
+        params.set('q', q.q || '');
         params.set('only_robot', q.only_robot ? '1' : '0');
         return params.toString();
     }
@@ -141,13 +150,14 @@ document.addEventListener('DOMContentLoaded', () => {
             emptyBox.hidden = false;
             emptyDesc.textContent = '关键字「' + data.keyword + '」' +
                 (data.theater ? '（' + data.theater + '）' : '') +
-                (data.only_robot ? '、仅已拉机器人群' : '') + ' 暂无匹配群名，换个关键字试试';
+                (data.q ? '、门店「' + data.q + '」' : '') +
+                (data.only_robot ? '、仅已拉机器人群' : '') + ' 暂无匹配，调整关键字或筛选试试';
             return;
         }
         emptyBox.hidden = true;
         resultBox.hidden = false;
         cardsBox.innerHTML =
-            cardHtml('匹配群总数', data.total, '群名含「' + data.keyword + '」' + (data.theater ? ' · ' + data.theater : '')) +
+            cardHtml('匹配群总数', data.total, '群名含「' + data.keyword + '」' + (data.theater ? ' · ' + data.theater : '') + (data.q ? ' · 门店「' + data.q + '」' : '')) +
             cardHtml('已拉机器人群数', data.robot_total, '匹配群中已拉超时提醒机器人') +
             cardHtml('涉及门店数', data.matched_store_total, '匹配群按群主部门归店') +
             cardHtml('未归店群数', data.unmatched_total, '缺门店或战区信息');
@@ -191,6 +201,9 @@ document.addEventListener('DOMContentLoaded', () => {
     keywordInput.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') query();
     });
+    storeQuery.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') query();
+    });
     theaterSelect.addEventListener('change', query);
     robotOnly.addEventListener('change', query);
     document.querySelector('#theater-table tbody').addEventListener('click', (ev) => {
@@ -204,6 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const init = stateFromUrl();
     keywordInput.value = init.keyword;
+    storeQuery.value = init.q;
     robotOnly.checked = init.only_robot;
     initialTheater = init.theater;
     query();

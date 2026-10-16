@@ -1,4 +1,75 @@
 document.addEventListener('DOMContentLoaded', () => {
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function listFilter() {
+        return window.LIST_FILTER || { theater: '', q: '' };
+    }
+
+    function storeMeta(name) {
+        return (window.STORE_META || {})[name] || {};
+    }
+
+    function visibleStore(name) {
+        const meta = storeMeta(name);
+        const filter = listFilter();
+        const theater = filter.theater || '';
+        const q = String(filter.q || '').trim().toLowerCase();
+        if (theater && (meta.theater || '') !== theater) return false;
+        if (!q) return true;
+        const code = String(meta.code || '').toLowerCase();
+        const label = String(name || '').toLowerCase();
+        return label.indexOf(q) >= 0 || (code && code.indexOf(q) >= 0);
+    }
+
+    function mergedRows(allStores, filterStores) {
+        const names = new Set([
+            ...Object.keys(allStores || {}),
+            ...Object.keys(filterStores || {}),
+        ]);
+        const rows = [];
+        names.forEach((name) => {
+            if (!visibleStore(name)) return;
+            rows.push({
+                name: name,
+                theater: storeMeta(name).theater || '',
+                group_count: Number((allStores || {})[name] || 0),
+                robot_group_count: Number((filterStores || {})[name] || 0),
+            });
+        });
+        rows.sort((a, b) =>
+            b.group_count - a.group_count ||
+            b.robot_group_count - a.robot_group_count ||
+            a.name.localeCompare(b.name, 'zh')
+        );
+        return rows;
+    }
+
+    function coverageTable(rows) {
+        const body = rows.length
+            ? rows.map((row, idx) =>
+                '<tr><td>' + (idx + 1) + '</td>' +
+                '<td>' + escapeHtml(row.name) + '</td>' +
+                '<td>' + escapeHtml(row.theater || '—') + '</td>' +
+                '<td>' + row.group_count + '</td>' +
+                '<td>' + row.robot_group_count + '</td></tr>'
+            ).join('')
+            : '<tr><td colspan="5" style="text-align:center" class="cl-muted">当前筛选没有门店</td></tr>';
+        return (
+            '<div class="store-table-wrapper">' +
+                '<table class="store-table">' +
+                    '<thead><tr><th>排名</th><th data-card-title>门店名称</th><th>战区</th><th>全量群数</th><th>已拉机器人群数</th></tr></thead>' +
+                    '<tbody>' + body + '</tbody>' +
+                '</table>' +
+            '</div>'
+        );
+    }
+
     // Tab 切换
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -59,42 +130,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const allStores = data.all.store_stats || {};
             const filterStores = data.filter.store_stats || {};
-
-            const allTableRows = Object.entries(allStores).map(([store, count], idx) =>
-                '<tr><td>' + (idx + 1) + '</td><td>' + store + '</td><td>' + count + '</td></tr>'
-            ).join('');
-
-            const filterTableRows = Object.entries(filterStores).map(([store, count], idx) =>
-                '<tr><td>' + (idx + 1) + '</td><td>' + store + '</td><td>' + count + '</td></tr>'
-            ).join('');
+            const rows = mergedRows(allStores, filterStores);
+            const allRows = rows.filter((row) => row.group_count > 0);
+            const robotRows = rows.filter((row) => row.robot_group_count > 0);
+            const allGroups = allRows.reduce((sum, row) => sum + row.group_count, 0);
+            const robotGroups = robotRows.reduce((sum, row) => sum + row.robot_group_count, 0);
 
             gridEl.innerHTML =
                 '<div class="stat-block">' +
                     '<h3>全量建群</h3>' +
-                    '<div class="big-number">' + data.all.group_count + '</div>' +
-                    '<div class="sub-stat">涉及 <strong>' + data.all.store_count + '</strong> 家门店</div>' +
+                    '<div class="big-number">' + allGroups + '</div>' +
+                    '<div class="sub-stat">涉及 <strong>' + allRows.length + '</strong> 家门店</div>' +
                     '<details class="store-details">' +
                         '<summary>查看各店群数量</summary>' +
-                        '<div class="store-table-wrapper">' +
-                            '<table class="store-table">' +
-                                '<thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>' +
-                                '<tbody>' + allTableRows + '</tbody>' +
-                            '</table>' +
-                        '</div>' +
+                        coverageTable(allRows) +
                     '</details>' +
                 '</div>' +
                 '<div class="stat-block">' +
                     '<h3>拉机器人群</h3>' +
-                    '<div class="big-number">' + data.filter.group_count + '</div>' +
-                    '<div class="sub-stat">涉及 <strong>' + data.filter.store_count + '</strong> 家门店</div>' +
+                    '<div class="big-number">' + robotGroups + '</div>' +
+                    '<div class="sub-stat">涉及 <strong>' + robotRows.length + '</strong> 家门店</div>' +
                     '<details class="store-details">' +
                         '<summary>查看各店群数量</summary>' +
-                        '<div class="store-table-wrapper">' +
-                            '<table class="store-table">' +
-                                '<thead><tr><th>排名</th><th>门店名称</th><th>群数量</th></tr></thead>' +
-                                '<tbody>' + filterTableRows + '</tbody>' +
-                            '</table>' +
-                        '</div>' +
+                        coverageTable(robotRows) +
                     '</details>' +
                 '</div>';
         });
