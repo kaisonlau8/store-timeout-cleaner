@@ -19,7 +19,7 @@
         <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
         {% set nav_active = 'coverage' %}
         {% include '_nav.html' %}
-        <span class="cl-meta">尚未拉入机器人的群</span>
+        <span class="cl-meta">门店群覆盖与超时明细</span>
     </div></header>
     <div class="container">
         <header class="ant-page-header">
@@ -78,16 +78,35 @@
             </div>
         </div>
 
+        <form class="month-selector timeout-filters list-filters store-filters" method="get">
+            {% if request.args.get('theater') %}<input type="hidden" name="theater" value="{{ request.args.get('theater') }}">{% endif %}
+            {% if request.args.get('back_q') %}<input type="hidden" name="back_q" value="{{ request.args.get('back_q') }}">{% endif %}
+            <div class="selector-group store-search">
+                <label for="store-q">搜索群与超时记录</label>
+                <input type="search" id="store-q" name="q" value="{{ q }}" placeholder="群名、群 ID；超时支持规则名、消息 ID">
+            </div>
+            {% for key, label in [('group_from', '群创建日期起'), ('group_to', '群创建日期止'), ('date_from', '超时时间起'), ('date_to', '超时时间止')] %}
+            <div class="selector-group">
+                <label for="{{ key }}">{{ label }}</label>
+                <input type="date" id="{{ key }}" name="{{ key }}" value="{{ filters[key] }}">
+            </div>
+            {% endfor %}
+            <button type="submit" class="filter-btn">筛选</button>
+            <a href="{{ reset_href }}">重置</a>
+        </form>
+        <p class="chart-hint">上方统计为门店全部群数；下方名单与超时记录按条件筛选，起止日期均包含当天。创建日期未知的群在日期筛选时仍显示。</p>
+        {% if detail.snapshot_only %}<p class="chart-hint">该门店统计来自最近一次覆盖汇总，群名单尚未写入本地数据库，请同步客户群后查看。</p>{% endif %}
+
         <div class="stat-block coverage-groups" id="pending-groups">
-            <div class="table-head"><h3>未拉机器人的群</h3><span class="chart-hint table-hint">chat_store 中该门店 in_robot 为否的群名</span></div>
+            <div class="table-head"><h3>未拉机器人的群</h3><span class="chart-hint table-hint">当前显示 {{ detail.pending|length }} 个群</span></div>
             <div class="store-table-wrapper">
                 <table class="store-table">
-                    <thead><tr><th data-card-title>群名</th></tr></thead>
+                    <thead><tr><th data-card-title>群名</th><th>创建时间</th></tr></thead>
                     <tbody>
                         {% for row in detail.pending %}
-                        <tr><td data-card-title>{{ row.group_name or '（未命名）' }}</td></tr>
+                        <tr><td data-card-title>{{ row.group_name or '（未命名）' }}</td><td>{{ row.create_time or '未知' }}</td></tr>
                         {% else %}
-                        <tr><td class="cl-muted">该门店暂无未拉机器人的群</td></tr>
+                        <tr><td colspan="2" class="cl-muted">当前条件下暂无未拉机器人的群</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -95,15 +114,30 @@
         </div>
 
         <div class="stat-block coverage-groups" id="robot-groups">
-            <div class="table-head"><h3>已拉机器人的群</h3><span class="chart-hint table-hint">这些群已经拉入超时提醒机器人</span></div>
+            <div class="table-head"><h3>已拉机器人的群</h3><span class="chart-hint table-hint">当前显示 {{ detail.robot|length }} 个群</span></div>
             <div class="store-table-wrapper">
                 <table class="store-table">
-                    <thead><tr><th data-card-title>群名</th></tr></thead>
+                    <thead><tr><th data-card-title>群名</th><th>创建时间</th></tr></thead>
                     <tbody>
                         {% for row in detail.robot %}
-                        <tr><td data-card-title>{{ row.group_name or '（未命名）' }}</td></tr>
+                        <tr><td data-card-title>{{ row.group_name or '（未命名）' }}</td><td>{{ row.create_time or '未知' }}</td></tr>
                         {% else %}
-                        <tr><td class="cl-muted">该门店还没有已拉机器人的群</td></tr>
+                        <tr><td colspan="2" class="cl-muted">当前条件下暂无已拉机器人的群</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="stat-block coverage-groups" id="timeout-events">
+            <div class="table-head"><h3>超时明细</h3><span class="chart-hint table-hint">当前显示 {{ detail.events|length }} 条 · 按超时时间倒序</span></div>
+            <div class="store-table-wrapper">
+                <table class="store-table">
+                    <thead><tr><th data-card-title>群名</th><th>超时时间</th><th>规则名称</th><th>消息 ID</th></tr></thead>
+                    <tbody>
+                        {% for row in detail.events %}
+                        <tr><td data-card-title>{{ row.group_name or '（未知群）' }}</td><td>{{ row.created_at }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td>{{ row.msg_id }}</td></tr>
+                        {% else %}
+                        <tr><td colspan="4" class="cl-muted">当前条件下暂无超时记录</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

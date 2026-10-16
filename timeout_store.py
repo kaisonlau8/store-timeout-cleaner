@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS chat_store (
   store TEXT,
   theater TEXT,
   group_name TEXT,
+  create_time TEXT,
   in_robot INTEGER NOT NULL DEFAULT 0
 );
 
@@ -81,6 +82,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE timeout_event ADD COLUMN source TEXT")
     if "room_name" not in cols:
         conn.execute("ALTER TABLE timeout_event ADD COLUMN room_name TEXT")
+    group_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_store)")}
+    if "create_time" not in group_cols:
+        conn.execute("ALTER TABLE chat_store ADD COLUMN create_time TEXT")
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
@@ -124,11 +128,12 @@ def replace_context(
                 rec.get("store") or "",
                 rec.get("theater") or "",
                 rec.get("group_name") or "",
+                rec.get("create_time") or None,
                 1 if room_id in robot_set else 0,
             )
         )
     conn.executemany(
-        "INSERT OR REPLACE INTO chat_store(room_id, store, theater, group_name, in_robot) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO chat_store(room_id, store, theater, group_name, create_time, in_robot) VALUES (?, ?, ?, ?, ?, ?)",
         rows,
     )
 

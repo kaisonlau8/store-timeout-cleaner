@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from group_keyword import list_theaters, open_ro
 from list_filters import row_visible
@@ -233,15 +233,15 @@ def coverage_back_href(theater: str = "", q: str = "") -> str:
 
 
 def coverage_store_href(name: str, theater: str = "", q: str = "") -> str:
-    """门店详情地址。theater / q 原样带回，便于从详情返回筛选结果。"""
-    params: dict[str, str] = {"name": name}
+    """以门店名生成稳定地址；首页搜索另存为 back_q，避免影响群名搜索。"""
+    params: dict[str, str] = {}
     theater = (theater or "").strip()
     q = (q or "").strip()
     if theater:
         params["theater"] = theater
     if q:
-        params["q"] = q
-    return "/coverage/store?" + urlencode(params)
+        params["back_q"] = q
+    return "/store/" + quote(name, safe="") + ("?" + urlencode(params) if params else "")
 
 
 def _primary_theater(counts: dict[str, int]) -> str:
@@ -256,41 +256,66 @@ def _group_row(row: sqlite3.Row) -> dict[str, Any]:
         "room_id": row["room_id"],
         "group_name": row["group_name"] or "",
         "in_robot": in_robot,
+        "create_time": row["create_time"] or "",
     }
 
 
-def store_coverage_detail(conn: sqlite3.Connection, store: str) -> dict[str, Any] | None:
+def store_coverage_detail(
+    conn: sqlite3.Connection, store: str, *, q: str = "", group_from: str = "",
+    group_to: str = "", date_from: str = "", date_to: str = "",
+) -> dict[str, Any] | None:
     """一家门店的群名单。pending 为 in_robot 为 0 的群，robot 为已拉入的群。"""
     name = (store or "").strip()
     if not name:
         return None
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_store)")}
+    create_col = "create_time" if "create_time" in cols else "NULL AS create_time"
     rows = conn.execute(
-        "SELECT room_id, store, theater, group_name, in_robot FROM chat_store "
+        f"SELECT room_id, store, theater, group_name, in_robot, {create_col} FROM chat_store "
         "WHERE TRIM(store) = ?",
         (name,),
     ).fetchall()
-    if not rows:
-        return None
     theaters: dict[str, int] = {}
     pending = []
     robot = []
+    query = q.casefold()
     for row in rows:
         item = _group_row(row)
-        if item["in_robot"]:
-            robot.append(item)
-        else:
-            pending.append(item)
+        day = item["create_time"][:10]
+        if (not query or query in (item["group_name"] + " " + item["room_id"]).casefold()) and (
+            not day or ((not group_from or day >= group_from) and (not group_to or day <= group_to))
+        ):
+            (robot if item["in_robot"] else pending).append(item)
         label = (row["theater"] or "").strip()
         if label:
             theaters[label] = theaters.get(label, 0) + 1
     pending.sort(key=lambda item: (item["group_name"].casefold(), item["room_id"]))
     robot.sort(key=lambda item: (item["group_name"].casefold(), item["room_id"]))
+    event_cols = {row[1] for row in conn.execute("PRAGMA table_info(timeout_event)")}
+    room_name = "e.room_name" if "room_name" in event_cols else "NULL"
+    events = []
+    has_events = False
+    if event_cols:
+        for row in conn.execute(
+            f"SELECT e.*, COALESCE(NULLIF({room_name}, ''), NULLIF(c.group_name, ''), e.room_id) AS group_name "
+            "FROM timeout_event e LEFT JOIN chat_store c ON c.room_id = e.room_id "
+            "WHERE TRIM(e.store) = ? ORDER BY e.created_at DESC, e.msg_id, e.rule_id", (name,)
+        ):
+            has_events = True
+            event = dict(row)
+            day = event["created_at"][:10]
+            text = " ".join(str(event.get(key) or "") for key in ("group_name", "rule_name", "msg_id", "room_id"))
+            if (not query or query in text.casefold()) and (not date_from or day >= date_from) and (not date_to or day <= date_to):
+                events.append(event)
+    if not rows and not has_events:
+        return None
     return {
         "store": name,
         "theater": _primary_theater(theaters),
         "group_count": len(rows),
-        "robot_count": len(robot),
-        "pending_count": len(pending),
+        "robot_count": sum(bool(row["in_robot"]) for row in rows),
+        "pending_count": sum(not row["in_robot"] for row in rows),
+        "events": events,
         "pending": pending,
         "robot": robot,
     }

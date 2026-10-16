@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from timeout_store import connect, replace_context
+from coverage_query import coverage_store_href
 
 ROWS = [
     {"group_id": "r1", "group_name": "X700-VIP 车主群A", "store": "猛士汽车武汉门店", "theater": "武汉特区"},
@@ -148,9 +149,7 @@ class CoveragePageTests(unittest.TestCase):
         self.assertIn('name="theater"', html)
         self.assertIn('name="q"', html)
         self.assertIn("_nav.html", Path(__file__).resolve().parents[1].joinpath("templates/index.html").read_text(encoding="utf-8"))
-        href = "/coverage/store?" + urlencode(
-            {"name": "猛士汽车武汉门店", "theater": "武汉特区", "q": "武汉"}
-        )
+        href = coverage_store_href("猛士汽车武汉门店", "武汉特区", "武汉")
         self.assertIn(href.replace("&", "&amp;"), html)
         table = html.split('data-coverage="national-all"', 1)[1].split("</table>", 1)[0]
         self.assertIn("猛士汽车武汉门店", table)
@@ -158,7 +157,7 @@ class CoveragePageTests(unittest.TestCase):
 
     def test_detail_lists_unroboted_group_names(self):
         query = urlencode({"name": "猛士汽车武汉门店", "theater": "武汉特区", "q": "武汉"})
-        resp = self.client.get("/coverage/store?" + query)
+        resp = self.client.get("/coverage/store?" + query, follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
         self.assertIn("猛士汽车武汉门店", html)
@@ -174,12 +173,13 @@ class CoveragePageTests(unittest.TestCase):
         self.assertIn(back.replace("&", "&amp;"), html)
 
     def test_unknown_store_page(self):
-        resp = self.client.get("/coverage/store?name=" + "不存在的门店")
+        resp = self.client.get("/coverage/store?name=" + "不存在的门店", follow_redirects=True)
         self.assertEqual(resp.status_code, 200)
         self.assertIn("没有这家门店", resp.get_data(as_text=True))
 
     def test_monthly_script_preserves_query(self):
         script = Path(__file__).resolve().parents[1].joinpath("static/js/display.js").read_text(encoding="utf-8")
-        self.assertIn("/coverage/store?", script)
+        self.assertIn("'/store/' + encodeURIComponent(name)", script)
+        self.assertIn("params.set('back_q', q)", script)
         self.assertIn("get('theater')", script)
         self.assertIn("get('q')", script)
