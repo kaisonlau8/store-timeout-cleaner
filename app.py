@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime
 from urllib.parse import quote
@@ -11,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, redirect, render_template, request
 
+from group_keyword import KeywordError, open_ro, query_keyword_groups
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
 from score_web import register_score
@@ -43,7 +45,9 @@ app.jinja_env.globals["ds_cards"] = lambda: _ds("cards.js")
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
 _mhero_auth_init(app, "cleaner", default_mode="off", public_get_paths=["/static/brand/*"])
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
-DATA_FILE = os.path.join(ROOT, "data.json")
+# 开发环境可用 CLEANER_DB_PATH / CLEANER_DATA_FILE 指向真实数据副本；默认不变
+DATA_FILE = os.environ.get("CLEANER_DATA_FILE") or os.path.join(ROOT, "data.json")
+GROUPS_DB_PATH = os.environ.get("CLEANER_DB_PATH") or os.path.join(ROOT, "timeout.db")
 LOCK_FILE = os.path.join(ROOT, ".sync.lock")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 CUTOFF_DATE = datetime(2026, 5, 1, tzinfo=SHANGHAI)
@@ -404,8 +408,125 @@ def timeout_export_csv():
     )
 
 
+# --- 群名关键字统计（基于 chat_store，只读查询） ---
+def _keyword_payload():
+    keyword = request.args.get("keyword") or ""
+    theater = (request.args.get("theater") or "").strip()
+    only_robot = (request.args.get("only_robot") or "0").strip().lower() in ("1", "true", "yes", "on")
+    if not os.path.isfile(GROUPS_DB_PATH):
+        return None, (jsonify({"error": "暂无群数据（找不到 timeout.db），请先从 SCRM 同步"}), 400)
+    conn = open_ro(GROUPS_DB_PATH)
+    try:
+        payload = query_keyword_groups(conn, keyword, theater=theater, only_robot=only_robot)
+    except KeywordError as exc:
+        return None, (jsonify({"error": str(exc)}), 400)
+    finally:
+        conn.close()
+    if not payload.get("synced_at"):
+        data = load_data()
+        if data and data.get("updated_at"):
+            payload["synced_at"] = data["updated_at"]
+    return payload, None
+
+
+@app.route("/groups")
+def groups_page():
+    return render_template("groups.html")
+
+
+@app.route("/api/groups/keyword")
+def api_groups_keyword():
+    payload, err = _keyword_payload()
+    if err:
+        return err
+    return jsonify(payload)
+
+
+@app.route("/api/groups/keyword/export")
+def api_groups_keyword_export():
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    payload, err = _keyword_payload()
+    if err:
+        return err
+
+    wb = Workbook()
+
+    def sheet_rows(title, header, rows, widths=None):
+        ws = wb.create_sheet(title)
+        ws.append(header)
+        for row in rows:
+            ws.append(row)
+        if widths:
+            for idx, width in enumerate(widths, 1):
+                ws.column_dimensions[get_column_letter(idx)].width = width
+        return ws
+
+    ws = wb.active
+    ws.title = "汇总"
+    summary_rows = [
+        ("关键字", payload["keyword"]),
+        ("战区筛选", payload.get("theater") or "全部"),
+        ("仅已拉机器人群", "是" if payload.get("only_robot") else "否"),
+        ("匹配群总数", payload["total"]),
+        ("已拉机器人群数", payload["robot_total"]),
+        ("涉及门店数", payload["matched_store_total"]),
+        ("未归店群数", payload["unmatched_total"]),
+        ("数据同步时间", payload.get("synced_at") or ""),
+    ]
+    for row in summary_rows:
+        ws.append(row)
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["B"].width = 44
+
+    sheet_rows(
+        "按战区",
+        ["战区", "群数", "门店数"],
+        [(r["theater"], r["group_count"], r["store_count"]) for r in payload["by_theater"]],
+        widths=[20, 10, 10],
+    )
+    sheet_rows(
+        "按门店",
+        ["排名", "门店", "战区", "群数", "已拉机器人"],
+        [
+            (idx, r["store"], r["theater"], r["group_count"], r["robot_count"])
+            for idx, r in enumerate(payload["by_store"], 1)
+        ],
+        widths=[8, 34, 16, 10, 14],
+    )
+    sheet_rows(
+        "未归店群",
+        ["序号", "群名", "是否已拉机器人"],
+        [(idx, r["group_name"], "是" if r["in_robot"] else "否") for idx, r in enumerate(payload["unmatched"], 1)],
+        widths=[8, 60, 16],
+    )
+    sheet_rows(
+        "群明细",
+        ["序号", "群名", "门店", "战区", "是否已拉机器人"],
+        [
+            (idx, r["group_name"], r["store"], r["theater"], "是" if r["in_robot"] else "否")
+            for idx, r in enumerate(payload["groups"], 1)
+        ],
+        widths=[8, 60, 34, 16, 16],
+    )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    safe_kw = re.sub(r'[\\/:*?"<>|\r\n]+', "_", payload["keyword"])[:60] or "空"
+    filename = f"群名统计_{safe_kw}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(filename)},
+    )
 register_score(app, ROOT)
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="门店超时提醒机器人统计控制台")
+    parser.add_argument("--port", type=int, default=5001, help="监听端口（默认 5001）")
+    args = parser.parse_args()
+    app.run(host="0.0.0.0", port=args.port, debug=True)

@@ -15,3 +15,4 @@ timeout.db-shm
 .env
 .idea/
 .vscode/
+.env.bak*
