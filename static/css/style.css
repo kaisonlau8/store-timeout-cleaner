@@ -732,4 +732,105 @@ body {
     .big-number {
         font-size: 32px;
     }
+    /* 三页导航在窄屏收紧，避免 390px 溢出 */
+    .page-nav {
+        margin-left: 4px;
+        gap: 2px;
+    }
+    .page-nav-link {
+        padding: 0 6px;
+        font-size: 13px;
+        gap: 4px;
+    }
+    .page-nav-link .ai {
+        display: none;
+    }
+    .brand {
+        margin-right: 8px;
+        font-size: 14px;
+    }
+    .page-nav-link {
+        min-height: 44px;
+        height: 44px;
+    }
+}
+
+/* ---- 群名统计（/groups） ---- */
+.groups-filters input[type="text"] {
+    min-width: 200px;
+}
+
+.robot-checkbox {
+    padding: 8px 0;
+    min-height: 39px;
+}
+
+@media (max-width: 768px) {
+    .robot-checkbox {
+        min-height: 44px;
+    }
+}
+
+.groups-cards {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.groups-tables {
+    margin-bottom: 24px;
+}
+
+.groups-unmatched {
+    margin-bottom: 24px;
+}
+
+.table-hint {
+    margin-bottom: 0;
+}
+
+.theater-chip {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: #1677ff;
+    cursor: pointer;
+}
+
+.theater-chip:hover {
+    color: #4096ff;
+    text-decoration: underline;
+}
+
+.theater-row {
+    cursor: pointer;
+}
+
+.theater-row:hover td {
+    background: #fafafa;
+}
+
+@media (max-width: 768px) {
+    .groups-filters input[type="text"],
+    .groups-filters select {
+        min-height: 44px;
+    }
+    .groups-filters .filter-btn,
+    .groups-filters .export-link {
+        min-height: 44px;
+        align-self: center;
+    }
+    .groups-filters .selector-group {
+        width: 100%;
+    }
+    .groups-filters input[type="text"],
+    .groups-filters select {
+        width: 100%;
+    }
+}
+
+/* 审阅修正：导航/战区/表头不折行 */
+.page-nav-link, .theater-chip, .groups-tables th { white-space: nowrap; }
+@media (max-width: 400px) {
+    .brand { font-size: 13px; }
+    .page-nav-link { padding: 0 4px; font-size: 12px; }
 }
