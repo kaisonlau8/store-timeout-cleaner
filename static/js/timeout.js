@@ -190,18 +190,39 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('');
     }
 
-    async function queryChart() {
+    let loadDepth = 0;
+
+    function pushLoad(tip) {
+        loadDepth += 1;
+        window.AntdFeedback.setButtonLoading(filterBtn, true);
+        window.AntdFeedback.setSpin(document.getElementById('timeout-results'), true, tip || '正在查询');
+    }
+
+    function popLoad() {
+        loadDepth = Math.max(0, loadDepth - 1);
+        if (loadDepth > 0) return;
+        window.AntdFeedback.setButtonLoading(filterBtn, false);
+        window.AntdFeedback.setSpin(document.getElementById('timeout-results'), false);
+    }
+
+    async function queryChart(options) {
+        const nested = options && options.nested;
         const q = currentQuery();
         exportLink.href = '/api/timeout/export?' + queryString(q);
-        filterBtn.disabled = true;
+        if (!nested) pushLoad('正在查询');
         try {
             const res = await fetch('/api/timeout/chart?' + queryString(q));
-            const data = await res.json();
+            let data = {};
+            try { data = await res.json(); } catch (e) { data = {}; }
+            if (!res.ok) throw new Error((data && data.error) || '查询失败');
             renderCards(data);
             renderChart(data);
             renderTable(data);
+        } catch (err) {
+            if (nested) throw err;
+            window.AntdFeedback.message('error', (err && err.message) || '查询失败');
         } finally {
-            filterBtn.disabled = false;
+            if (!nested) popLoad();
         }
     }
 
@@ -252,39 +273,88 @@ document.addEventListener('DOMContentLoaded', () => {
         renderImports(meta.imports);
     }
 
+    function setImportProgress(fileName, percent, status) {
+        const box = document.getElementById('import-progress');
+        const bg = document.getElementById('import-progress-bg');
+        const text = document.getElementById('import-progress-text');
+        const name = document.getElementById('import-progress-name');
+        const bar = document.getElementById('import-progress-bar');
+        if (!box || !bg || !text || !name || !bar) return;
+        box.hidden = false;
+        name.textContent = fileName || '';
+        const shown = Math.max(0, Math.min(100, percent || 0));
+        bg.style.width = shown + '%';
+        text.textContent = shown >= 100 && status !== 'exception' ? '处理中' : (shown + '%');
+        bar.classList.remove('ant-progress-status-active', 'ant-progress-status-success', 'ant-progress-status-exception');
+        if (status === 'exception') bar.classList.add('ant-progress-status-exception');
+        else if (status === 'success' || shown >= 100) bar.classList.add('ant-progress-status-success');
+        else bar.classList.add('ant-progress-status-active');
+    }
+
+    function hideImportProgress() {
+        const box = document.getElementById('import-progress');
+        if (box) box.hidden = true;
+    }
+
+    function importSummary(data) {
+        if (!data || !data.filename) return '已写入超时记录';
+        return (data.filename || '') +
+            ' · ' + (data.range_start || '') + ' ~ ' + (data.range_end || '') +
+            ' · 文件 ' + (data.rows_in_file || 0) + ' 行 · 计入 ' + (data.events || 0) +
+            ' · 未归店 ' + (data.unmatched || 0);
+    }
+
     async function reloadAll() {
-        const res = await fetch('/api/timeout/meta?scan=1');
-        applyMeta(await res.json());
-        await queryChart();
+        const importPanel = document.getElementById('import-panel');
+        pushLoad('正在加载');
+        window.AntdFeedback.setSpin(importPanel, true, '正在加载');
+        try {
+            const res = await fetch('/api/timeout/meta?scan=1');
+            let payload = {};
+            try { payload = await res.json(); } catch (e) { payload = {}; }
+            if (!res.ok) throw new Error((payload && payload.error) || '加载失败');
+            applyMeta(payload);
+            await queryChart({ nested: true });
+        } catch (err) {
+            window.AntdFeedback.message('error', '页面数据加载失败');
+            if (!endDate.value) endDate.value = localISODate();
+        } finally {
+            window.AntdFeedback.setSpin(importPanel, false);
+            popLoad();
+        }
     }
 
     const fileInput = document.getElementById('excel-file');
     const importError = document.getElementById('import-error');
+    const uploadBtn = document.getElementById('import-upload');
     if (fileInput) {
         fileInput.addEventListener('change', async () => {
-            if (!fileInput.files || !fileInput.files[0]) return;
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) return;
             importError.hidden = true;
-            const body = new FormData();
-            body.append('file', fileInput.files[0]);
+            window.AntdFeedback.setButtonLoading(uploadBtn, true);
+            setImportProgress(file.name, 0, 'active');
             try {
-                const res = await fetch('/api/timeout/import', { method: 'POST', body });
-                const data = await res.json();
-                if (!res.ok) {
-                    importError.hidden = false;
-                    importError.textContent = data.error || '导入失败';
-                    return;
-                }
+                const data = await window.AntdFeedback.upload('/api/timeout/import', file, {
+                    field: 'file',
+                    onProgress: (pct) => setImportProgress(file.name, pct, pct >= 100 ? 'success' : 'active'),
+                });
+                setImportProgress(file.name, 100, 'success');
+                window.AntdFeedback.notification('success', '导入完成', importSummary(data));
+                hideImportProgress();
                 await reloadAll();
             } catch (err) {
+                const msg = (err && err.message) || '导入失败';
+                setImportProgress(file.name, 100, 'exception');
                 importError.hidden = false;
-                importError.textContent = '导入失败';
+                importError.textContent = msg;
+                window.AntdFeedback.message('error', msg);
             } finally {
+                window.AntdFeedback.setButtonLoading(uploadBtn, false);
                 fileInput.value = '';
             }
         });
     }
 
-    reloadAll().catch(() => {
-        endDate.value = localISODate();
-    });
+    reloadAll();
 });

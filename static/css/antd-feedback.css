@@ -1,0 +1,274 @@
+/* Ant Design v5 交互反馈（默认蓝白）。只补 Button loading / Spin / Progress / Message / Notification。
+   颜色走页面已有 token，不改主题。动效是组件自带的 CSS，没有额外动画库。 */
+
+@keyframes antLoadingCircle {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes antSpinMove {
+  to { opacity: 1; }
+}
+
+@keyframes antProgressActive {
+  0% { transform: translateX(-100%) scaleX(0); opacity: .1; }
+  20% { transform: translateX(-100%) scaleX(0); opacity: .5; }
+  100% { transform: translateX(0) scaleX(1); opacity: 0; }
+}
+
+@keyframes antMessageIn {
+  0% { opacity: 0; transform: translateY(-100%); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.ai.ant-btn-loading-icon {
+  animation: antLoadingCircle 1s linear infinite;
+  transform-origin: center;
+}
+
+.ant-btn-loading,
+.filter-btn.ant-btn-loading,
+.export-link.ant-btn-loading,
+.import-upload.ant-btn-loading {
+  pointer-events: none;
+  cursor: default;
+}
+
+.filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-btn:disabled,
+.filter-btn.ant-btn-loading {
+  color: #fff;
+  background: #1677ff;
+  opacity: 1;
+}
+
+.ant-spin-nested { position: relative; }
+
+.ant-spin-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, .45);
+  border-radius: 8px;
+}
+
+.ai[hidden],
+.ant-spin-overlay[hidden],
+.ant-upload-list[hidden] { display: none !important; }
+
+.ant-spin-nested.is-spinning > :not(.ant-spin-overlay) {
+  opacity: .5;
+  user-select: none;
+  pointer-events: none;
+}
+
+.ant-spin { color: var(--ant-primary, #1677ff); text-align: center; }
+
+.ant-spin-dot {
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+}
+
+.ant-spin-dot-item {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 9px;
+  background: var(--ant-primary, #1677ff);
+  border-radius: 50%;
+  opacity: .3;
+  transform: scale(.75);
+  animation: antSpinMove 1s infinite linear alternate;
+}
+
+.ant-spin-dot-item:nth-child(1) { top: 0; left: 0; }
+.ant-spin-dot-item:nth-child(2) { top: 0; right: 0; animation-delay: .4s; }
+.ant-spin-dot-item:nth-child(3) { right: 0; bottom: 0; animation-delay: .8s; }
+.ant-spin-dot-item:nth-child(4) { bottom: 0; left: 0; animation-delay: 1.2s; }
+
+.ant-spin-text {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--ant-primary, #1677ff);
+}
+
+.ant-upload-list { margin: 0 0 12px; }
+
+.ant-upload-list-item {
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--ant-color-border, #d9d9d9);
+  border-radius: 8px;
+}
+
+.ant-upload-list-item-name {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--ant-color-text, rgba(0, 0, 0, .88));
+  word-break: break-all;
+}
+
+.ant-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ant-progress-outer { flex: 1; }
+
+.ant-progress-inner {
+  height: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .06);
+  border-radius: 100px;
+}
+
+.ant-progress-bg {
+  position: relative;
+  height: 100%;
+  background: var(--ant-primary, #1677ff);
+  border-radius: 100px;
+  transition: width .2s linear;
+}
+
+.ant-progress-status-active .ant-progress-bg::before {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  border-radius: 100px;
+  animation: antProgressActive 2.4s cubic-bezier(.23, 1, .32, 1) infinite;
+  content: "";
+}
+
+.ant-progress-status-success .ant-progress-bg { background: var(--ant-success, #52c41a); }
+.ant-progress-status-exception .ant-progress-bg { background: var(--ant-error, #ff4d4f); }
+
+.ant-progress-text {
+  min-width: 3em;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, .65));
+  font-variant-numeric: tabular-nums;
+}
+
+.ant-message {
+  position: fixed;
+  top: 8px;
+  left: 0;
+  right: 0;
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.ant-message-notice {
+  padding: 8px;
+  text-align: center;
+  animation: antMessageIn .2s ease;
+}
+
+.ant-message-notice-content {
+  display: inline-block;
+  padding: 9px 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: var(--ant-shadow-dropdown, 0 6px 16px 0 rgba(0, 0, 0, .08), 0 3px 6px -4px rgba(0, 0, 0, .12), 0 9px 28px 8px rgba(0, 0, 0, .05));
+  pointer-events: all;
+}
+
+.ant-message-custom-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--ant-color-text, rgba(0, 0, 0, .88));
+}
+
+.ant-message-success .ai { color: var(--ant-success, #52c41a); }
+.ant-message-error .ai { color: var(--ant-error, #ff4d4f); }
+.ant-message-warning .ai { color: var(--ant-warning, #faad14); }
+.ant-message-info .ai { color: var(--ant-primary, #1677ff); }
+
+.ant-notification {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1010;
+  width: 384px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.ant-notification-notice {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px 36px 16px 24px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: var(--ant-shadow-dropdown, 0 6px 16px 0 rgba(0, 0, 0, .08), 0 3px 6px -4px rgba(0, 0, 0, .12), 0 9px 28px 8px rgba(0, 0, 0, .05));
+  pointer-events: all;
+  animation: antMessageIn .2s ease;
+}
+
+.ant-notification-notice-icon { font-size: 22px; line-height: 1; }
+.ant-notification-notice-success .ant-notification-notice-icon { color: var(--ant-success, #52c41a); }
+.ant-notification-notice-error .ant-notification-notice-icon { color: var(--ant-error, #ff4d4f); }
+.ant-notification-notice-warning .ant-notification-notice-icon { color: var(--ant-warning, #faad14); }
+.ant-notification-notice-info .ant-notification-notice-icon { color: var(--ant-primary, #1677ff); }
+
+.ant-notification-notice-message {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text, rgba(0, 0, 0, .88));
+  line-height: 1.5;
+}
+
+.ant-notification-notice-description {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, .65));
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.ant-notification-notice-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 0;
+  color: rgba(0, 0, 0, .45);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ant-notification-notice-close:hover { color: rgba(0, 0, 0, .88); }
+
+@media (max-width: 768px) {
+  .ant-notification { top: 16px; right: 16px; left: 16px; width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai.ant-btn-loading-icon,
+  .ant-spin-dot-item,
+  .ant-progress-status-active .ant-progress-bg::before,
+  .ant-message-notice,
+  .ant-notification-notice { animation: none; }
+  .ant-spin-dot-item { opacity: 1; }
+}
