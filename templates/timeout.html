@@ -11,6 +11,7 @@
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -31,15 +32,29 @@
             </div>
         </header>
 
-        <div class="stat-block import-panel">
+        <div class="stat-block import-panel" id="import-panel">
             <div class="table-head">
                 <h3>导出登记</h3>
-                <label class="export-link import-upload">
-                    <svg class="ai" aria-hidden="true"><use href="#i-upload"/></svg>上传 Excel
+                <label class="export-link import-upload" id="import-upload" data-loading-text="上传中">
+                    <svg class="ai" aria-hidden="true"><use href="#i-upload"/></svg>
+                    <span data-btn-label>上传 Excel</span>
                     <input type="file" id="excel-file" accept=".xlsx,.xls" hidden>
                 </label>
             </div>
             <p class="chart-hint">文件名需带时间范围，例如 <code>导出时间范围20260701-20260731回复超时记录.xlsx</code>。放入 <code>input_file/</code> 或在此上传，同一区间会覆盖重导。</p>
+            <div class="ant-upload-list" id="import-progress" hidden>
+                <div class="ant-upload-list-item">
+                    <span class="ant-upload-list-item-name" id="import-progress-name"></span>
+                    <div class="ant-progress ant-progress-line ant-progress-status-active ant-progress-show-info" id="import-progress-bar">
+                        <div class="ant-progress-outer">
+                            <div class="ant-progress-inner">
+                                <div class="ant-progress-bg" id="import-progress-bg" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <span class="ant-progress-text" id="import-progress-text">0%</span>
+                    </div>
+                </div>
+            </div>
             <p class="error-msg" id="import-error" hidden></p>
             <div class="store-table-wrapper">
                 <table class="store-table" id="import-table">
@@ -81,9 +96,10 @@
                 <label>结束</label>
                 <input type="date" id="end-date">
             </div>
-            <button class="filter-btn" id="filter-btn" type="button">查询</button>
+            <button class="filter-btn" id="filter-btn" type="button" data-loading-text="查询中"><span data-btn-label>查询</span></button>
         </div>
 
+        <div id="timeout-results">
         <div class="summary-cards" id="total-cards"></div>
         <div class="summary-cards rule-cards" id="rule-cards"></div>
 
@@ -98,7 +114,7 @@
         <div class="stat-block store-block">
             <div class="table-head">
                 <h3>门店明细</h3>
-                <a class="export-link" id="export-link" href="/api/timeout/export">导出 CSV</a>
+                <a class="export-link" id="export-link" data-antd-export data-loading-text="导出中" href="/api/timeout/export"><span data-btn-label>导出 CSV</span></a>
             </div>
             <div class="store-table-wrapper timeout-table-wrap">
                 <table class="store-table" id="store-table">
@@ -107,9 +123,11 @@
                 </table>
             </div>
         </div>
+        </div>
     </div>
     <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=4"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

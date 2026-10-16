@@ -11,6 +11,7 @@
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -35,7 +36,7 @@
                     {% endif %}
                 </div>
             </div>
-            {% if has_data %}<div class="ant-page-header-actions"><a class="ant-btn" href="/api/export-all" title="序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出总表 CSV</a></div>{% endif %}
+            {% if has_data %}<div class="ant-page-header-actions"><a class="ant-btn" data-antd-export data-loading-text="导出中" href="/api/export-all" title="序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg><span data-btn-label>导出总表 CSV</span></a></div>{% endif %}
         </header>
 
         {% if not has_data %}
@@ -104,7 +105,7 @@
                         <div class="big-number">{{ data.stats.national.all.group_count }}</div>
                         <div class="sub-stat">涉及 <strong>{{ data.stats.national.all.store_count }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" href="/api/export?scope=national&dataset=all">导出各店群数量 CSV</a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=national&dataset=all"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
@@ -125,7 +126,7 @@
                         <div class="big-number">{{ data.stats.national.filter.group_count }}</div>
                         <div class="sub-stat">涉及 <strong>{{ data.stats.national.filter.store_count }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" href="/api/export?scope=national&dataset=filter">导出各店群数量 CSV</a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=national&dataset=filter"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
@@ -151,7 +152,7 @@
                         <div class="big-number">{{ data.stats.after_may1.all.group_count }}</div>
                         <div class="sub-stat">涉及 <strong>{{ data.stats.after_may1.all.store_count }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" href="/api/export?scope=after_may1&dataset=all">导出各店群数量 CSV</a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=after_may1&dataset=all"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
@@ -172,7 +173,7 @@
                         <div class="big-number">{{ data.stats.after_may1.filter.group_count }}</div>
                         <div class="sub-stat">涉及 <strong>{{ data.stats.after_may1.filter.store_count }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" href="/api/export?scope=after_may1&dataset=filter">导出各店群数量 CSV</a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=after_may1&dataset=filter"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
@@ -244,6 +245,7 @@
         window.MONTHLY_MONTHS = {{ data.stats.monthly.months | tojson }};
     </script>
     {% endif %}
+    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='js/display.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
