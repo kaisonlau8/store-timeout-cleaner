@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <style>
         .score-pill { display: inline-block; min-width: 3em; padding: 0 8px; border-radius: 4px; font-weight: 600; text-align: center; }
         .score-100 { background: #f6ffed; color: #237804; }
@@ -41,12 +41,17 @@
                 <div class="ant-page-header-sub">按选定日期重算收缩率。默认上一自然季度。</div>
             </div>
             <div class="ant-page-header-actions score-actions">
-                <a class="export-link" href="/api/score/export.csv?start={{ report.start }}&amp;end={{ report.end }}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 CSV</a>
-                <a class="export-link" href="/api/score/export.xlsx?start={{ report.start }}&amp;end={{ report.end }}"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
+                <a class="export-link" href="/api/score/export.csv?start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 CSV</a>
+                <a class="export-link" href="/api/score/export.xlsx?start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
             </div>
         </header>
 
-        <form class="month-selector timeout-filters" method="get" action="/score">
+        <form class="month-selector timeout-filters list-filters" method="get" action="/score">
+            {% for key, value in request.args.items() %}
+            {% if key not in ['start', 'end', 'theater', 'q'] %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endif %}
+            {% endfor %}
             <div class="selector-group">
                 <label for="start-date">开始</label>
                 <input type="date" id="start-date" name="start" value="{{ report.start }}">
@@ -54,6 +59,19 @@
             <div class="selector-group">
                 <label for="end-date">结束</label>
                 <input type="date" id="end-date" name="end" value="{{ report.end }}">
+            </div>
+            <div class="selector-group">
+                <label for="theater-select">战区</label>
+                <select id="theater-select" name="theater">
+                    <option value="">全部战区</option>
+                    {% for name in report.theaters %}
+                    <option value="{{ name }}" {% if name == report.theater %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="selector-group">
+                <label for="store-q">门店</label>
+                <input id="store-q" name="q" type="search" value="{{ report.q }}" placeholder="门店名称或编码" autocomplete="off">
             </div>
             <button class="filter-btn" type="submit">查询</button>
         </form>
@@ -72,6 +90,9 @@
             按超时率从低到高，名次 ≤ 20% 为 100 分，≤ 50% 为 80 分，其余 60 分；同率并列取较高档。
             参与排名 {{ report.ranked }} 家。未归店超时 {{ report.unmatched }} 条。
         </p>
+        {% if report.filtered %}
+        <p class="score-note">当前筛选 {{ report.matched }} 家（战区 {{ report.theater or '全部' }}{% if report.q %}，门店「{{ report.q }}」{% endif %}）。分档仍按全部参与排名门店计算。</p>
+        {% endif %}
         {% if report.missing_message %}
         <p class="score-note">有 {{ report.missing_message }} 条超时对不上消息正文，话术、寒暄和仅 @ 规则已跳过，仍会做重复触发和 30 分钟合并。</p>
         {% endif %}
@@ -98,7 +119,7 @@
                     <tbody>
                         {% for row in report.stores %}
                         <tr>
-                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}">{{ row.name }}</a></td>
+                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}">{{ row.name }}</a></td>
                             <td>{{ row.code or '—' }}</td>
                             <td>{{ row.theater or '—' }}</td>
                             <td class="num">{{ row.robot_group_count }}</td>
@@ -111,7 +132,7 @@
                             <td>{{ row.remark or '—' }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="11" style="text-align:center" class="cl-muted">暂无门店。请先从 SCRM 同步客户群，并导入超时 Excel。</td></tr>
+                        <tr><td colspan="11" style="text-align:center" class="cl-muted">{% if report.filtered %}当前筛选没有门店{% else %}暂无门店。请先从 SCRM 同步客户群，并导入超时 Excel。{% endif %}</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -119,6 +140,6 @@
         </div>
     </div>
     <script>{{ ds_cards()|safe }}</script>
-    <script src="{{ url_for('static', filename='js/score.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/score.js') }}?v=3"></script>
 </body>
 </html>

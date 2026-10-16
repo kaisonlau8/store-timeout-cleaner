@@ -640,7 +640,9 @@ body {
 .timeout-filters select,
 .timeout-filters input[type="date"],
 .timeout-filters input[type="text"],
-#store-input {
+.timeout-filters input[type="search"],
+#store-input,
+#store-q {
     padding: 8px 14px;
     font-size: 14px;
     border: 1px solid #d9d9d9;
@@ -648,6 +650,15 @@ body {
     background: #fff;
     color: rgba(0,0,0,.88);
     min-width: 160px;
+}
+
+.timeout-filters input[type="search"]:focus,
+.timeout-filters select:focus,
+#store-q:focus,
+#store-input:focus {
+    outline: none;
+    border-color: #1677ff;
+    box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
 }
 
 .grain-pills {
@@ -756,7 +767,8 @@ body {
 }
 
 /* ---- 群名统计（/groups） ---- */
-.groups-filters input[type="text"] {
+.groups-filters input[type="text"],
+.groups-filters input[type="search"] {
     min-width: 200px;
 }
 
@@ -810,21 +822,26 @@ body {
 }
 
 @media (max-width: 768px) {
-    .groups-filters input[type="text"],
-    .groups-filters select {
-        min-height: 44px;
-    }
-    .groups-filters .filter-btn,
-    .groups-filters .export-link {
-        min-height: 44px;
-        align-self: center;
-    }
+    .list-filters .selector-group,
     .groups-filters .selector-group {
         width: 100%;
     }
+    .list-filters input[type="text"],
+    .list-filters input[type="search"],
+    .list-filters input[type="date"],
+    .list-filters select,
+    .list-filters .filter-btn,
     .groups-filters input[type="text"],
+    .groups-filters input[type="search"],
     .groups-filters select {
         width: 100%;
+        min-height: 44px;
+    }
+    .groups-filters .filter-btn,
+    .groups-filters .export-link,
+    .list-filters .filter-btn {
+        min-height: 44px;
+        align-self: center;
     }
 }
 

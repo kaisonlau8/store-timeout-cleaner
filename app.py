@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, redirect, render_template, request
 
+from coverage_query import allowed_store_names, build_coverage_view
 from group_keyword import KeywordError, open_ro, query_keyword_groups
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
@@ -127,10 +128,19 @@ def run_timeout_sync():
         _release_sync_lock(lock_fh)
 
 
+def _data_path() -> str:
+    return os.environ.get("CLEANER_DATA_FILE") or DATA_FILE
+
+
+def _db_path() -> str:
+    return os.environ.get("CLEANER_DB_PATH") or GROUPS_DB_PATH
+
+
 def load_data():
-    if not os.path.exists(DATA_FILE):
+    path = _data_path()
+    if not os.path.exists(path):
         return None
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -240,7 +250,26 @@ def compute_stats(all_rows, filter_rows):
 @app.route("/")
 def index():
     data = load_data()
-    return render_template("index.html", has_data=data is not None, data=data)
+    coverage = None
+    if data is not None:
+        coverage = build_coverage_view(
+            data,
+            request.args.get("theater") or "",
+            request.args.get("q") or "",
+            _db_path(),
+        )
+    return render_template("index.html", has_data=data is not None, data=data, coverage=coverage)
+
+
+def _export_allowed(data):
+    if data is None:
+        return None
+    return allowed_store_names(
+        data,
+        request.args.get("theater") or "",
+        request.args.get("q") or "",
+        _db_path(),
+    )
 
 
 @app.route("/timeout")
@@ -263,6 +292,9 @@ def export_csv():
         return jsonify({"error": "暂无数据，请先从 SCRM 同步"}), 400
 
     store_stats = data["stats"].get(scope, {}).get(dataset, {}).get("store_stats", {})
+    allowed = _export_allowed(data)
+    if allowed is not None:
+        store_stats = {name: count for name, count in store_stats.items() if name in allowed}
     if not store_stats:
         return jsonify({"error": "没有可导出的数据"}), 400
 
@@ -295,6 +327,9 @@ def export_all_csv():
     all_stats = data["stats"]["national"]["all"]["store_stats"]
     filter_stats = data["stats"]["national"]["filter"]["store_stats"]
     all_stores = set(all_stats) | set(filter_stats)
+    allowed = _export_allowed(data)
+    if allowed is not None:
+        all_stores &= allowed
 
     rows = []
     for store in all_stores:
@@ -337,6 +372,8 @@ def timeout_chart_api():
         grain=request.args.get("grain") or "month",
         start=request.args.get("start"),
         end=request.args.get("end"),
+        theater=request.args.get("theater") or "",
+        q=request.args.get("q") or "",
     )
     return jsonify(payload)
 
@@ -378,6 +415,8 @@ def timeout_export_csv():
         grain=request.args.get("grain") or "month",
         start=request.args.get("start"),
         end=request.args.get("end"),
+        theater=request.args.get("theater") or "",
+        q=request.args.get("q") or "",
     )
     rules = payload.get("totals", {}).get("rules") or []
     output = io.StringIO()
@@ -412,12 +451,16 @@ def timeout_export_csv():
 def _keyword_payload():
     keyword = request.args.get("keyword") or ""
     theater = (request.args.get("theater") or "").strip()
+    store_q = (request.args.get("q") or "").strip()
     only_robot = (request.args.get("only_robot") or "0").strip().lower() in ("1", "true", "yes", "on")
-    if not os.path.isfile(GROUPS_DB_PATH):
+    db_path = _db_path()
+    if not os.path.isfile(db_path):
         return None, (jsonify({"error": "暂无群数据（找不到 timeout.db），请先从 SCRM 同步"}), 400)
-    conn = open_ro(GROUPS_DB_PATH)
+    conn = open_ro(db_path)
     try:
-        payload = query_keyword_groups(conn, keyword, theater=theater, only_robot=only_robot)
+        payload = query_keyword_groups(
+            conn, keyword, theater=theater, only_robot=only_robot, store_q=store_q
+        )
     except KeywordError as exc:
         return None, (jsonify({"error": str(exc)}), 400)
     finally:
@@ -468,6 +511,7 @@ def api_groups_keyword_export():
     summary_rows = [
         ("关键字", payload["keyword"]),
         ("战区筛选", payload.get("theater") or "全部"),
+        ("门店筛选", payload.get("q") or "全部"),
         ("仅已拉机器人群", "是" if payload.get("only_robot") else "否"),
         ("匹配群总数", payload["total"]),
         ("已拉机器人群数", payload["robot_total"]),

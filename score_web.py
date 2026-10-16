@@ -6,9 +6,37 @@ from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from list_filters import row_visible
 from score_export import stores_to_csv, stores_to_xlsx
 from score_llm import llm_configured, maybe_autostart_review, review_status, start_review_job
 from score_query import build_report, parse_range, store_detail
+
+
+def _view_report(report: dict, theater: str | None, query: str | None) -> dict:
+    """只筛列表，不重算分档。战区选项来自评分行上的 theater（chat_store 多数票）。"""
+    theater = (theater or "").strip()
+    query = (query or "").strip()
+    stores = list(report.get("stores") or [])
+    theaters = sorted({(row.get("theater") or "").strip() for row in stores if (row.get("theater") or "").strip()})
+    if theater and theater not in theaters:
+        theaters = sorted(set(theaters) | {theater})
+    shown = [
+        row
+        for row in stores
+        if row_visible(
+            {"name": row.get("name") or "", "code": row.get("code") or "", "theater": row.get("theater") or ""},
+            theater,
+            query,
+        )
+    ]
+    view = dict(report)
+    view["stores"] = shown
+    view["theaters"] = theaters
+    view["theater"] = theater
+    view["q"] = query
+    view["filtered"] = bool(theater or query)
+    view["matched"] = len(shown)
+    return view
 
 
 def _kick_review(root: str, start, end, meta: dict) -> dict:
@@ -37,6 +65,7 @@ def register_score(app: Flask, root: str) -> None:
     def score_page():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
         report = _with_auto_review(root, start, end, lambda: build_report(root, start, end))
+        report = _view_report(report, request.args.get("theater"), request.args.get("q"))
         return render_template("score.html", report=report)
 
     @app.route("/score/store")
@@ -58,7 +87,11 @@ def register_score(app: Flask, root: str) -> None:
     @app.route("/api/score/export.csv")
     def score_export_csv():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
-        report = build_report(root, start, end)
+        report = _view_report(
+            build_report(root, start, end),
+            request.args.get("theater"),
+            request.args.get("q"),
+        )
         filename = f"门店超时评分_{report['start']}_{report['end']}.csv"
         return Response(
             stores_to_csv(report["stores"]),
@@ -69,7 +102,11 @@ def register_score(app: Flask, root: str) -> None:
     @app.route("/api/score/export.xlsx")
     def score_export_xlsx():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
-        report = build_report(root, start, end)
+        report = _view_report(
+            build_report(root, start, end),
+            request.args.get("theater"),
+            request.args.get("q"),
+        )
         filename = f"门店超时评分_{report['start']}_{report['end']}.xlsx"
         return Response(
             stores_to_xlsx(report["stores"]),

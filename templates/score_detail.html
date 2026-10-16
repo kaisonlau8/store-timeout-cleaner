@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <style>
         .msg-cell { max-width: 420px; white-space: pre-wrap; word-break: break-word; }
         .score-note { margin: 0 0 12px; color: rgba(0,0,0,.65); font-size: 13px; }
@@ -32,7 +32,7 @@
             <div class="ant-page-header-heading">
                 <h1>{{ detail.name if detail else '超时明细' }}</h1>
                 <div class="ant-page-header-sub">
-                    <a href="/score?start={{ start }}&amp;end={{ end }}">返回评分列表</a>
+                    <a href="/score?start={{ start }}&amp;end={{ end }}{% if request.args.get('theater') %}&amp;theater={{ request.args.get('theater')|urlencode }}{% endif %}{% if request.args.get('q') %}&amp;q={{ request.args.get('q')|urlencode }}{% endif %}">返回评分列表</a>
                     {% if detail and detail.store %}
                         · {{ detail.store.tier or '—' }} · {{ '%.2f'|format(detail.store.score) }} 分
                         · 原始 {{ detail.store.raw }} / 有效 {{ detail.store.valid }}
@@ -58,6 +58,13 @@
         </div>
         {% else %}
         {% if detail.store.remark %}<p class="score-note">{{ detail.store.remark }}</p>{% endif %}
+
+        <div class="month-selector timeout-filters list-filters">
+            <div class="selector-group">
+                <label for="detail-q">搜索</label>
+                <input id="detail-q" type="search" placeholder="会话、规则或消息" autocomplete="off" value="{{ request.args.get('dq') or '' }}">
+            </div>
+        </div>
 
         <div class="stat-block store-block">
             <div class="table-head"><h3>计入的超时</h3></div>
@@ -110,6 +117,6 @@
         {% endif %}
     </div>
     <script>{{ ds_cards()|safe }}</script>
-    <script src="{{ url_for('static', filename='js/score.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/score.js') }}?v=3"></script>
 </body>
 </html>

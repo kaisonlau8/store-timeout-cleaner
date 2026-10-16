@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -31,7 +31,7 @@
             </div>
         </header>
 
-        <div class="month-selector timeout-filters groups-filters">
+        <div class="month-selector timeout-filters groups-filters list-filters">
             <div class="selector-group">
                 <label for="keyword-input">关键字</label>
                 <input type="text" id="keyword-input" value="X700-VIP" placeholder="输入群名关键字" autocomplete="off">
@@ -41,6 +41,10 @@
                 <select id="theater-select">
                     <option value="">全部战区</option>
                 </select>
+            </div>
+            <div class="selector-group">
+                <label for="store-q">门店</label>
+                <input type="search" id="store-q" placeholder="门店名称或编码" autocomplete="off">
             </div>
             <div class="selector-group">
                 <label>筛选</label>
@@ -95,7 +99,7 @@
             </div>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='js/groups.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/groups.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

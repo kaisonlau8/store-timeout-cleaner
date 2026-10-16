@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
 </head>
 <body>
@@ -37,7 +37,7 @@
                     {% endif %}
                 </div>
             </div>
-            {% if has_data %}<div class="ant-page-header-actions"><a class="ant-btn" data-antd-export data-loading-text="导出中" href="/api/export-all" title="序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg><span data-btn-label>导出总表 CSV</span></a></div>{% endif %}
+            {% if has_data %}<div class="ant-page-header-actions"><a class="ant-btn" data-antd-export data-loading-text="导出中" href="/api/export-all{% if coverage.qs %}?{{ coverage.qs }}{% endif %}" title="序号｜店名｜全量群数｜拉机器人群数｜拉群率｜剩余待拉群数"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg><span data-btn-label>导出总表 CSV</span></a></div>{% endif %}
         </header>
 
         {% if not has_data %}
@@ -93,6 +93,58 @@
                 </div>
             </div>
 
+            <form class="month-selector timeout-filters list-filters" method="get" action="/">
+                {% for key, value in request.args.items() %}
+                {% if key not in ['theater', 'q'] %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+                {% endif %}
+                {% endfor %}
+                <div class="selector-group">
+                    <label for="theater-select">战区</label>
+                    <select id="theater-select" name="theater">
+                        <option value="">全部战区</option>
+                        {% for name in coverage.theaters %}
+                        <option value="{{ name }}" {% if name == coverage.theater %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="selector-group">
+                    <label for="store-q">门店</label>
+                    <input id="store-q" name="q" type="search" value="{{ coverage.q }}" placeholder="门店名称或编码" autocomplete="off">
+                </div>
+                <button class="filter-btn" type="submit">查询</button>
+            </form>
+            <p class="chart-hint">战区和门店可同时筛选。战区来自客户群归属。</p>
+
+            {% macro coverage_table(rows, marker) %}
+            <div class="store-table-wrapper">
+                <table class="store-table" data-coverage="{{ marker }}">
+                    <thead>
+                        <tr>
+                            <th>排名</th>
+                            <th data-card-title>门店名称</th>
+                            <th>战区</th>
+                            <th>全量群数</th>
+                            <th>已拉机器人群数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.theater or '—' }}</td>
+                        <td>{{ row.group_count }}</td>
+                        <td>{{ row.robot_group_count }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" style="text-align:center" class="cl-muted">当前筛选没有门店</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endmacro %}
+
             <div class="tabs">
                 <button class="tab-btn active" data-tab="national">全国统计</button>
                 <button class="tab-btn" data-tab="after-may1">2026年5月1日后</button>
@@ -103,44 +155,26 @@
                 <div class="stats-grid">
                     <div class="stat-block">
                         <h3>全量用户群</h3>
-                        <div class="big-number">{{ data.stats.national.all.group_count }}</div>
-                        <div class="sub-stat">涉及 <strong>{{ data.stats.national.all.store_count }}</strong> 家门店</div>
+                        <div class="big-number">{{ coverage.national.all_groups }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ coverage.national.all_stores }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=national&dataset=all"><span data-btn-label>导出各店群数量 CSV</span></a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=national&dataset=all{% if coverage.qs %}&amp;{{ coverage.qs }}{% endif %}"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
-                            <div class="store-table-wrapper">
-                                <table class="store-table">
-                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
-                                    <tbody>
-                                    {% for store, count in data.stats.national.all.store_stats.items() %}
-                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {{ coverage_table(coverage.national.all_rows, 'national-all') }}
                         </details>
                     </div>
                     <div class="stat-block">
                         <h3>已拉超时提醒机器人</h3>
-                        <div class="big-number">{{ data.stats.national.filter.group_count }}</div>
-                        <div class="sub-stat">涉及 <strong>{{ data.stats.national.filter.store_count }}</strong> 家门店</div>
+                        <div class="big-number">{{ coverage.national.robot_groups }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ coverage.national.robot_stores }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=national&dataset=filter"><span data-btn-label>导出各店群数量 CSV</span></a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=national&dataset=filter{% if coverage.qs %}&amp;{{ coverage.qs }}{% endif %}"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
-                            <div class="store-table-wrapper">
-                                <table class="store-table">
-                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
-                                    <tbody>
-                                    {% for store, count in data.stats.national.filter.store_stats.items() %}
-                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {{ coverage_table(coverage.national.robot_rows, 'national-robot') }}
                         </details>
                     </div>
                 </div>
@@ -150,44 +184,26 @@
                 <div class="stats-grid">
                     <div class="stat-block">
                         <h3>全量用户群（2026-05-01后新建）</h3>
-                        <div class="big-number">{{ data.stats.after_may1.all.group_count }}</div>
-                        <div class="sub-stat">涉及 <strong>{{ data.stats.after_may1.all.store_count }}</strong> 家门店</div>
+                        <div class="big-number">{{ coverage.after_may1.all_groups }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ coverage.after_may1.all_stores }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=after_may1&dataset=all"><span data-btn-label>导出各店群数量 CSV</span></a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=after_may1&dataset=all{% if coverage.qs %}&amp;{{ coverage.qs }}{% endif %}"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
-                            <div class="store-table-wrapper">
-                                <table class="store-table">
-                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
-                                    <tbody>
-                                    {% for store, count in data.stats.after_may1.all.store_stats.items() %}
-                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {{ coverage_table(coverage.after_may1.all_rows, 'after-all') }}
                         </details>
                     </div>
                     <div class="stat-block">
                         <h3>已拉超时提醒机器人（2026-05-01后新建）</h3>
-                        <div class="big-number">{{ data.stats.after_may1.filter.group_count }}</div>
-                        <div class="sub-stat">涉及 <strong>{{ data.stats.after_may1.filter.store_count }}</strong> 家门店</div>
+                        <div class="big-number">{{ coverage.after_may1.robot_groups }}</div>
+                        <div class="sub-stat">涉及 <strong>{{ coverage.after_may1.robot_stores }}</strong> 家门店</div>
                         <div class="export-row">
-                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=after_may1&dataset=filter"><span data-btn-label>导出各店群数量 CSV</span></a>
+                            <a class="export-link" data-antd-export data-loading-text="导出中" href="/api/export?scope=after_may1&dataset=filter{% if coverage.qs %}&amp;{{ coverage.qs }}{% endif %}"><span data-btn-label>导出各店群数量 CSV</span></a>
                         </div>
                         <details class="store-details">
                             <summary>查看各店群数量</summary>
-                            <div class="store-table-wrapper">
-                                <table class="store-table">
-                                    <thead><tr><th>排名</th><th data-card-title>门店名称</th><th>群数量</th></tr></thead>
-                                    <tbody>
-                                    {% for store, count in data.stats.after_may1.filter.store_stats.items() %}
-                                    <tr><td>{{ loop.index }}</td><td>{{ store }}</td><td>{{ count }}</td></tr>
-                                    {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {{ coverage_table(coverage.after_may1.robot_rows, 'after-robot') }}
                         </details>
                     </div>
                 </div>
@@ -244,10 +260,12 @@
     <script>
         window.MONTHLY_DATA = {{ data.stats.monthly.data | tojson }};
         window.MONTHLY_MONTHS = {{ data.stats.monthly.months | tojson }};
+        window.STORE_META = {{ coverage.store_meta | tojson }};
+        window.LIST_FILTER = {{ coverage.list_filter | tojson }};
     </script>
     {% endif %}
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/display.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='js/display.js') }}?v=4"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

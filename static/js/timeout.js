@@ -41,9 +41,43 @@ document.addEventListener('DOMContentLoaded', () => {
             opt.value = row.name;
             storeList.appendChild(opt);
         });
-        if (storeInput.value && !stores.some((row) => row.name === storeInput.value)) {
-            storeInput.value = '';
+    }
+
+    function readUrl() {
+        const params = new URLSearchParams(location.search);
+        let q = params.get('q') || '';
+        let theater = params.get('theater') || '';
+        if (!q && params.get('scope') === 'store') q = params.get('id') || '';
+        if (!theater && params.get('scope') === 'theater') theater = params.get('id') || '';
+        return {
+            theater: theater,
+            q: q,
+            grain: params.get('grain') || '',
+            start: params.get('start') || '',
+            end: params.get('end') || '',
+        };
+    }
+
+    function ensureOption(select, value) {
+        if (!value) return;
+        const exists = Array.prototype.some.call(select.options, (opt) => opt.value === value);
+        if (!exists) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            select.appendChild(opt);
         }
+        select.value = value;
+    }
+
+    function applyGrain(grain) {
+        const value = grain || 'month';
+        document.querySelectorAll('.grain-pills input').forEach((input) => {
+            const on = input.value === value;
+            input.checked = on;
+            const pill = input.closest('.toggle-btn');
+            if (pill) pill.classList.toggle('active', on);
+        });
     }
 
     function selectedGrain() {
@@ -52,20 +86,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function currentQuery() {
-        const store = (storeInput.value || '').trim();
+        const q = (storeInput.value || '').trim();
         const theater = theaterSel.value;
+        const exact = q && (meta.stores || []).some((row) => row.name === q);
         let scope = 'national';
         let id = '';
-        if (store) {
+        if (exact) {
             scope = 'store';
-            id = store;
-        } else if (theater) {
+            id = q;
+        } else if (theater && !q) {
             scope = 'theater';
             id = theater;
         }
         return {
             scope,
             id,
+            theater,
+            q,
             grain: selectedGrain(),
             start: startDate.value,
             end: endDate.value,
@@ -74,10 +111,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function queryString(q) {
         const params = new URLSearchParams();
-        Object.entries(q).forEach(([k, v]) => {
-            if (v) params.set(k, v);
+        ['scope', 'id', 'theater', 'q', 'grain', 'start', 'end'].forEach((key) => {
+            if (q[key]) params.set(key, q[key]);
         });
         return params.toString();
+    }
+
+    function writeUrl(q) {
+        const params = new URLSearchParams(location.search);
+        function put(key, value) {
+            if (value) params.set(key, value);
+            else params.delete(key);
+        }
+        put('theater', q.theater);
+        put('q', q.q);
+        put('grain', q.grain);
+        put('start', q.start);
+        put('end', q.end);
+        if (q.scope && q.scope !== 'national') {
+            put('scope', q.scope);
+            put('id', q.id);
+        } else {
+            put('scope', '');
+            put('id', '');
+        }
+        const qs = params.toString();
+        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
     }
 
     function renderCards(data) {
@@ -164,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const rules = (data.totals && data.totals.rules) || [];
         const thead = document.querySelector('#store-table thead');
         const tbody = document.querySelector('#store-table tbody');
-        let head = '<tr><th>排名</th><th>门店</th><th>战区</th><th>计入消息</th><th>触发群数</th><th>规则次数</th>';
+        let head = '<tr><th>排名</th><th data-card-title>门店</th><th>战区</th><th>计入消息</th><th>触发群数</th><th>规则次数</th>';
         rules.forEach((rule) => {
             head += '<th>' + escapeHtml(rule.rule_name || rule.rule_id) + '</th>';
         });
@@ -208,6 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function queryChart(options) {
         const nested = options && options.nested;
         const q = currentQuery();
+        writeUrl(q);
         exportLink.href = '/api/timeout/export?' + queryString(q);
         if (!nested) pushLoad('正在查询', '查询中');
         try {
@@ -259,10 +319,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyMeta(payload) {
         meta = payload || meta;
+        const urlState = readUrl();
         fillTheaters();
+        ensureOption(theaterSel, urlState.theater);
         fillStores();
-        if (meta.min_date) startDate.value = meta.min_date;
-        if (meta.max_date) endDate.value = meta.max_date;
+        if (urlState.q) storeInput.value = urlState.q;
+        applyGrain(urlState.grain);
+        if (urlState.start) startDate.value = urlState.start;
+        else if (meta.min_date) startDate.value = meta.min_date;
+        if (urlState.end) endDate.value = urlState.end;
+        else if (meta.max_date) endDate.value = meta.max_date;
         else endDate.value = localISODate();
         const el = document.getElementById('updated-at');
         if (meta.updated_at) {
