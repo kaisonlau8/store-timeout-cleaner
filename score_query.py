@@ -98,7 +98,7 @@ def prepare_events(
     verdicts = cache_get(root, pending)
     available = llm_configured(root)
     if use_llm is None:
-        use_llm = available and any(text in verdicts for text in pending)
+        use_llm = available
     if use_llm:
         apply_verdicts(events, verdicts)
     meta = {
@@ -154,6 +154,9 @@ def store_detail(
         "end": end.isoformat(),
         "missing_message": report["missing_message"],
         "llm_on": report["llm_on"],
+        "llm_available": report["llm_available"],
+        "llm_cached": report["llm_cached"],
+        "llm_pending": report["llm_pending"],
     }
 
 

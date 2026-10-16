@@ -7,43 +7,58 @@ from urllib.parse import quote
 from flask import Flask, Response, jsonify, render_template, request
 
 from score_export import stores_to_csv, stores_to_xlsx
-from score_llm import llm_configured, review_status, start_review_job
+from score_llm import llm_configured, maybe_autostart_review, review_status, start_review_job
 from score_query import build_report, parse_range, store_detail
 
 
-def _use_llm(root: str) -> bool | None:
-    if not llm_configured(root):
-        return False
-    values = request.args.getlist("llm")
-    if not values:
-        return None
-    return values[-1] == "1"
+def _kick_review(root: str, start, end, meta: dict) -> dict:
+    return maybe_autostart_review(
+        root,
+        start,
+        end,
+        pending=meta.get("llm_pending"),
+        cached=meta.get("llm_cached"),
+        source="page",
+    )
+
+
+def _with_auto_review(root: str, start, end, build):
+    payload = build()
+    gap = payload.get("llm_available") and payload.get("llm_cached", 0) < payload.get("llm_pending", 0)
+    status = _kick_review(root, start, end, payload)
+    if gap and status.get("status") in {"done", "error"}:
+        payload = build()
+    payload["llm_job"] = status
+    return payload
 
 
 def register_score(app: Flask, root: str) -> None:
     @app.route("/score")
     def score_page():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
-        report = build_report(root, start, end, use_llm=_use_llm(root))
+        report = _with_auto_review(root, start, end, lambda: build_report(root, start, end))
         return render_template("score.html", report=report)
 
     @app.route("/score/store")
     def score_store_page():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
         name = (request.args.get("name") or "").strip()
-        detail = store_detail(root, name, start, end, use_llm=_use_llm(root)) if name else None
+        detail = (
+            _with_auto_review(root, start, end, lambda: store_detail(root, name, start, end))
+            if name
+            else None
+        )
         return render_template(
             "score_detail.html",
             detail=detail,
             start=start.isoformat(),
             end=end.isoformat(),
-            llm_on=bool(detail and detail.get("llm_on")),
         )
 
     @app.route("/api/score/export.csv")
     def score_export_csv():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
-        report = build_report(root, start, end, use_llm=_use_llm(root))
+        report = build_report(root, start, end)
         filename = f"门店超时评分_{report['start']}_{report['end']}.csv"
         return Response(
             stores_to_csv(report["stores"]),
@@ -54,7 +69,7 @@ def register_score(app: Flask, root: str) -> None:
     @app.route("/api/score/export.xlsx")
     def score_export_xlsx():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
-        report = build_report(root, start, end, use_llm=_use_llm(root))
+        report = build_report(root, start, end)
         filename = f"门店超时评分_{report['start']}_{report['end']}.xlsx"
         return Response(
             stores_to_xlsx(report["stores"]),

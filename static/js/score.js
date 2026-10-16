@@ -1,66 +1,39 @@
 (function () {
-  var btn = document.getElementById("llm-run");
   var box = document.getElementById("llm-status");
-  if (!btn || !box) return;
+  if (!box || box.dataset.auto !== "1") return;
 
   function query() {
-    return "start=" + encodeURIComponent(btn.dataset.start || "") +
-      "&end=" + encodeURIComponent(btn.dataset.end || "");
+    return "start=" + encodeURIComponent(box.dataset.start || "") +
+      "&end=" + encodeURIComponent(box.dataset.end || "");
   }
 
-  function paint(data) {
-    if (!data) return;
-    if (data.status === "running") {
-      box.textContent = "正在复核 " + (data.done || 0) + "/" + (data.total || 0);
-      return;
-    }
-    if (data.status === "done") {
-      box.textContent = "复核完成" + (data.failed ? "，失败 " + data.failed + " 批，未返回的消息仍计入" : "");
-      return;
-    }
-    if (data.status === "error") {
-      box.textContent = data.note || "复核失败";
-    }
-  }
+  var reloadKey = "llm-auto-reload:" + (box.dataset.start || "") + ":" + (box.dataset.end || "") + ":" + (box.dataset.reload || "");
 
   function poll() {
     fetch("/api/score/llm-status?" + query())
       .then(function (response) { return response.json(); })
       .then(function (data) {
-        paint(data);
+        if (!data) return;
         if (data.status === "running") {
+          box.textContent = "LLM复核已自动计入。正在补齐 " + (data.done || 0) + "/" + (data.total || 0);
           setTimeout(poll, 1000);
           return;
         }
-        if (data.status === "done" && btn.dataset.started === "1") {
-          window.location.href = "/score?" + query() + "&llm=1";
-        }
+        var finished = data.status === "done" || data.status === "error";
+        var changed = data.status !== (box.dataset.state || "") ||
+          (data.updated_at || "") !== (box.dataset.since || "");
+        if (!finished || !changed) return;
+        var token = (data.status || "") + "|" + (data.updated_at || "");
+        try {
+          if (sessionStorage.getItem(reloadKey) === token) return;
+          sessionStorage.setItem(reloadKey, token);
+        } catch (err) {}
+        window.location.href = box.dataset.reload || ("/score?" + query());
       })
       .catch(function () {
-        box.textContent = "复核状态获取失败";
+        setTimeout(poll, 2000);
       });
   }
 
-  btn.addEventListener("click", function () {
-    if (btn.disabled) return;
-    btn.disabled = true;
-    btn.dataset.started = "1";
-    box.textContent = "正在启动复核…";
-    fetch("/api/score/llm-review?" + query() + "&force=" + (btn.dataset.force || "0"), { method: "POST" })
-      .then(function (response) { return response.json(); })
-      .then(function (data) {
-        paint(data);
-        if (data.status === "off") {
-          box.textContent = "未配置 DEEPSEEK_API_KEY，LLM 复核关闭";
-          return;
-        }
-        poll();
-      })
-      .catch(function () {
-        box.textContent = "复核启动失败";
-        btn.disabled = false;
-      });
-  });
-
-  if (btn.dataset.running === "1") poll();
+  poll();
 })();

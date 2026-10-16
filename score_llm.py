@@ -1,7 +1,8 @@
 """DeepSeek 复核：只处理规则留下的消息，结果按正文哈希缓存。
 
 客户消息正文会发给 DeepSeek。密钥只从环境变量 DEEPSEEK_API_KEY 读取，不写日志。
-页面计分只读缓存；真正打接口在后台任务里。
+页面计分只读缓存。导入新超时数据，或打开仍有未缓存正文的评分区间时，后台自动补齐；
+已缓存的正文不会再次发送，除非管理接口显式 force。
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 PROMPT_VERSION = "v1"
 BATCH_SIZE = 20
 MAX_WORKERS = 100
+FAIL_COOLDOWN_SECONDS = 600
 MODEL = "deepseek-chat"
 API_URL = "https://api.deepseek.com/chat/completions"
 PROMPT = (
@@ -39,6 +41,8 @@ PROMPT = (
 
 _lock = threading.Lock()
 _running: set[str] = set()
+_follow: dict[str, bool] = {}
+_threads: list[threading.Thread] = []
 
 
 def text_hash(text: str) -> str:
@@ -145,49 +149,96 @@ def start_review_job(
     end: date,
     *,
     force: bool = False,
+    follow_up: bool = False,
     post: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     key = _range_key(start, end)
     with _lock:
         if key in _running:
+            if follow_up or force:
+                _follow[key] = bool(_follow.get(key)) or bool(force)
             return review_status(root, start, end)
         _running.add(key)
+        _follow.pop(key, None)
     _write_job(root, start, end, status="running", total=0, done=0, failed=0, note="已启动")
 
     def work() -> None:
+        current_force = force
         try:
-            execute_review(root, start, end, force=force, post=post)
+            while True:
+                execute_review(root, start, end, force=current_force, post=post)
+                with _lock:
+                    if key not in _follow:
+                        break
+                    current_force = bool(_follow.pop(key))
         except Exception:
             log.warning("LLM 复核任务失败")
             _write_job(root, start, end, status="error", total=0, done=0, failed=0, note="复核失败")
         finally:
             with _lock:
                 _running.discard(key)
+                _follow.pop(key, None)
 
-    threading.Thread(target=work, name="score-llm-review", daemon=True).start()
+    thread = threading.Thread(target=work, name="score-llm-review", daemon=True)
+    with _lock:
+        _threads.append(thread)
+    thread.start()
     return review_status(root, start, end)
+
+
+def wait_review_jobs() -> None:
+    with _lock:
+        pending = [thread for thread in _threads if thread.is_alive()]
+        _threads[:] = pending
+    for thread in pending:
+        thread.join()
+
+
+def maybe_autostart_review(
+    root: str,
+    start: date,
+    end: date,
+    *,
+    pending: int | None = None,
+    cached: int | None = None,
+    source: str = "page",
+) -> dict[str, Any]:
+    """后台增量复核。没配密钥时直接返回，不抛错。"""
+    if not api_key(root):
+        return {"status": "off", "total": 0, "done": 0, "failed": 0, "note": "未配置密钥", "updated_at": ""}
+    if source == "page" and pending is not None and cached is not None and cached >= pending:
+        return review_status(root, start, end)
+    status = review_status(root, start, end)
+    if status.get("status") == "running":
+        if source == "import":
+            return start_review_job(root, start, end, follow_up=True)
+        return status
+    if source == "page" and _failed_recently(status):
+        return status
+    return start_review_job(root, start, end, force=False)
 
 
 def review_status(root: str, start: date, end: date) -> dict[str, Any]:
     conn = _open(root)
     if conn is None:
-        return {"status": "idle", "total": 0, "done": 0, "failed": 0, "note": ""}
+        return {"status": "idle", "total": 0, "done": 0, "failed": 0, "note": "", "updated_at": ""}
     try:
         _ensure(conn)
         row = conn.execute(
-            "SELECT status, total, done, failed, note FROM score_llm_job WHERE range_key = ?",
+            "SELECT status, total, done, failed, note, updated_at FROM score_llm_job WHERE range_key = ?",
             (_range_key(start, end),),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
-        return {"status": "idle", "total": 0, "done": 0, "failed": 0, "note": ""}
+        return {"status": "idle", "total": 0, "done": 0, "failed": 0, "note": "", "updated_at": ""}
     return {
         "status": row["status"],
         "total": int(row["total"] or 0),
         "done": int(row["done"] or 0),
         "failed": int(row["failed"] or 0),
         "note": row["note"] or "",
+        "updated_at": row["updated_at"] or "",
     }
 
 
@@ -351,6 +402,20 @@ def _as_keep(value: Any) -> bool:
     if value is None:
         return True
     return bool(value)
+
+
+def _failed_recently(status: dict[str, Any]) -> bool:
+    failed = status.get("status") == "error" or (
+        status.get("status") == "done" and int(status.get("failed") or 0) > 0
+    )
+    if not failed:
+        return False
+    raw = str(status.get("updated_at") or "")
+    try:
+        stamp = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=SHANGHAI)
+    except ValueError:
+        return False
+    return (datetime.now(SHANGHAI) - stamp).total_seconds() < FAIL_COOLDOWN_SECONDS
 
 
 def _pending_texts(events: list[dict[str, Any]]) -> list[str]:
