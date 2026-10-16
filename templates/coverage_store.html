@@ -157,7 +157,7 @@
                     <thead><tr><th data-card-title>群名</th><th>客户发言时间</th><th>消息</th><th>规则名称</th><th>详情</th></tr></thead>
                     <tbody>
                         {% for row in detail.events %}
-                        <tr data-msg="{{ row.msg_id }}"><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td class="cell-msg">{{ (row.content or '')[:80] }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10], 'status': 'valid'}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
+                        <tr data-msg="{{ row.msg_id }}"><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td class="cell-msg">{{ (row.content or '')[:80] }}</td><td>{{ row.rule_name or '（未知规则）' }}{{ row.rule_name|kpi_tag }}</td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10], 'status': 'valid'}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
                         {% else %}
                         <tr><td colspan="5" class="cl-muted">当前条件下暂无超时记录</td></tr>
                         {% endfor %}
@@ -174,7 +174,7 @@
                     <thead><tr><th data-card-title>群名</th><th>客户发言时间</th><th>消息</th><th>规则名称</th><th>剔除原因</th><th>详情</th></tr></thead>
                     <tbody>
                         {% for row in detail.excluded %}
-                        <tr data-msg="{{ row.msg_id }}"><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td class="cell-msg">{{ (row.content or '')[:80] }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td><span class="ant-tag">{{ row.exclude_reason }}</span></td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10], 'status': 'excluded'}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
+                        <tr data-msg="{{ row.msg_id }}"><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td class="cell-msg">{{ (row.content or '')[:80] }}</td><td>{{ row.rule_name or '（未知规则）' }}{{ row.rule_name|kpi_tag }}</td><td><span class="ant-tag">{{ row.exclude_reason }}</span></td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10], 'status': 'excluded'}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
                         {% else %}
                         <tr><td colspan="6" class="cl-muted">当前条件下没有被剔除的消息</td></tr>
                         {% endfor %}
@@ -191,7 +191,7 @@
       if (f && window.matchMedia('(max-width: 768px)').matches) f.removeAttribute('open');
     })();
     </script>
-    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

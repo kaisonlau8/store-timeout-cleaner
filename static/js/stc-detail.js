@@ -1,3 +1,10 @@
+// 不计 KPI 的规则名来自导航上的 data-non-kpi（/admin/rules 的「计入 KPI」开关）
+window.stcKpiTag = function (name) {
+    var nav = document.getElementById('site-nav'); var list = [];
+    try { list = JSON.parse((nav && nav.getAttribute('data-non-kpi')) || '[]'); } catch (e) { list = []; }
+    return String(name || '').split(' / ').some(function (n) { return list.indexOf(n.trim()) >= 0; })
+        ? ' <span class="ant-tag ant-tag-warning kpi-off" title="该规则只在超时机器人中展示，不计入 KPI/评分">仅展示，不计 KPI</span>' : '';
+};
 /* 超时明细下钻：StcDetail.events(params,title) / members(roomId,name) */
 (function () {
     'use strict';
@@ -41,7 +48,7 @@
     function eventItem(e) {
         return '<li class="sd-item" data-room="' + esc(e.room_id) + '" data-at="' + esc(e.created_at) + '" data-min="' + esc(e.minutes || 30) + '" data-msg="' + esc(e.msg_id) + '" data-name="' + esc(e.group_name) + '">' +
             '<div class="sd-row"><button type="button" class="sd-link sd-title" data-act="members">' + esc(e.group_name || e.room_id) + '</button></div>' +
-            '<div class="sd-row"><span>' + esc(e.created_at) + '</span><span class="sd-tag warn">' + esc(e.rule_name || '超时') + '</span>' +
+            '<div class="sd-row"><span>' + esc(e.created_at) + '</span><span class="sd-tag warn">' + esc(e.rule_name || '超时') + '</span>' + (window.stcKpiTag ? window.stcKpiTag(e.rule_name) : '') +
             (e.minutes ? '<span>超过 ' + esc(e.minutes) + ' 分钟未回复</span>' : '') +
             (e.exclude_reason ? '<span class="sd-tag">不计入：' + esc(e.exclude_reason) + '</span>' : '') + '</div>' +
             (e.content ? '<div class="sd-row sd-quote">' + esc(e.content) + '</div>' : '') +

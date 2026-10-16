@@ -33,9 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 '<td>' + esc(c.minutes) + ' 分钟</td><td>' + esc(days(c.days)) + '</td><td>' + esc(c.start_time + ' - ' + c.end_time) + '</td>' +
                 '<td>' + esc(c.effective_from) + ' 起' + (c.effective_to ? '<br>至 ' + esc(c.effective_to) : '') + '</td>' +
                 '<td>' + (c.enabled ? '<span class="ant-tag ant-tag-success">启用</span>' : '<span class="ant-tag">停用</span>') + '</td>' +
+                '<td>' + (c.counts_for_kpi ? '<span class="ant-tag ant-tag-processing">计入 KPI</span>' : '<span class="ant-tag ant-tag-warning kpi-off">仅展示，不计 KPI</span>') + '</td>' +
                 '<td><div class="ops"><button type="button" class="ant-btn ant-btn-sm" data-edit="' + i + '"><svg class="ai" aria-hidden="true"><use href="#i-edit"/></svg>编辑</button>' +
                 '<button type="button" class="ant-btn ant-btn-sm" data-toggle="' + i + '">' + (c.enabled ? '停用' : '启用') + '</button></div></td></tr>';
-        }).join('') : '<tr><td colspan="7" class="cl-muted" style="text-align:center">暂无规则</td></tr>';
+        }).join('') : '<tr><td colspan="8" class="cl-muted" style="text-align:center">暂无规则</td></tr>';
         const a = payload.archive || {};
         $('archive-info').textContent = a.days ? '会话存档 ' + a.from + ' ~ ' + a.to + '（' + a.days + ' 天）' : '会话存档尚未拉取';
         const r = payload.last_run;
@@ -87,13 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = $('rule-form');
     function openModal(i) {
         editing = i == null ? null : rules[i];
-        const c = editing ? editing.current : { name: '', minutes: 30, days: [1, 2, 3, 4, 5], start_time: '09:00', end_time: '20:00', enabled: true, note: '' };
+        const c = editing ? editing.current : { name: '', minutes: 30, days: [1, 2, 3, 4, 5], start_time: '09:00', end_time: '20:00', enabled: true, counts_for_kpi: true, note: '' };
         $('rule-title').textContent = editing ? '编辑规则' : '新建规则';
         form.name.value = c.name; form.minutes.value = c.minutes;
         form.querySelectorAll('[name=days]').forEach((el) => { el.checked = c.days.indexOf(Number(el.value)) >= 0; });
         form.start.value = c.start_time; form.end.value = c.end_time;
         form.effective_from.value = editing ? today() : today();
-        form.enabled.checked = !!c.enabled; form.note.value = c.note || '';
+        form.enabled.checked = !!c.enabled; form.counts_for_kpi.checked = c.counts_for_kpi !== false; form.note.value = c.note || '';
         $('rule-tip').hidden = !editing;
         $('rule-error').hidden = true;
         $('rule-mask').hidden = false; $('rule-modal').hidden = false;
@@ -112,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             name: form.name.value.trim(), minutes: Number(form.minutes.value),
             days: Array.from(form.querySelectorAll('[name=days]:checked')).map((el) => Number(el.value)),
             start: form.start.value, end: form.end.value, effective_from: form.effective_from.value,
-            enabled: form.enabled.checked, note: form.note.value.trim(),
+            enabled: form.enabled.checked, counts_for_kpi: form.counts_for_kpi.checked, note: form.note.value.trim(),
         };
         const btn = $('rule-save');
         FB.setButtonLoading(btn, true);
@@ -129,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
         FB.setButtonLoading(tg, true);
         try {
             await submit({ name: c.name, minutes: c.minutes, days: c.days, start: c.start_time, end: c.end_time,
-                effective_from: today(), enabled: !c.enabled, note: c.note }, g.rule_key);
+                effective_from: today(), enabled: !c.enabled, counts_for_kpi: c.counts_for_kpi, note: c.note }, g.rule_key);
         } catch (e) { FB.message('error', e.message); }
         finally { FB.setButtonLoading(tg, false); }
     });

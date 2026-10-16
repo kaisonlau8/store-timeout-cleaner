@@ -86,7 +86,45 @@ def open_db(root: str):
     conn = connect(os.path.join(root, "timeout.db"))
     conn.executescript(SCHEMA)
     _seed(conn)
+    _migrate_kpi(conn)
     return conn
+
+
+NON_KPI_SEED = "2035988283787413634"  # 10 分钟规则：仅展示，不计 KPI
+
+
+def _migrate_kpi(conn) -> None:
+    """counts_for_kpi：只有为 1 的规则命中才进入 KPI/评分；按 rule_key 统一（不分版本）。"""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(calc_rule)")}
+    if "counts_for_kpi" in cols:
+        return
+    conn.execute("ALTER TABLE calc_rule ADD COLUMN counts_for_kpi INTEGER NOT NULL DEFAULT 1")
+    conn.execute("UPDATE calc_rule SET counts_for_kpi=0 WHERE rule_key=?", (NON_KPI_SEED,))
+    _mirror_rule_table(conn)
+    conn.commit()
+
+
+def kpi_rule_flags(conn) -> dict[str, bool]:
+    """rule_key → 是否计入 KPI（取最新版本）。未登记的 rule_id 视为计入。"""
+    out: dict[str, bool] = {}
+    for r in conn.execute("SELECT rule_key, counts_for_kpi FROM calc_rule ORDER BY effective_from, id"):
+        out[r[0]] = bool(r[1])
+    return out
+
+
+def non_kpi_rules(root: str) -> tuple[set[str], set[str]]:
+    """返回 (不计 KPI 的 rule_key 集合, 对应规则名集合)。"""
+    path = os.path.join(root, "timeout.db")
+    if not os.path.isfile(path):
+        return set(), set()
+    conn = open_db(root)
+    try:
+        keys = {k for k, v in kpi_rule_flags(conn).items() if not v}
+        names = {r[0] for r in conn.execute(
+            "SELECT DISTINCT name FROM calc_rule WHERE rule_key IN (%s)" % ",".join("?" * len(keys)), tuple(keys))} if keys else set()
+        return keys, names
+    finally:
+        conn.close()
 
 
 def _seed(conn) -> None:
@@ -110,6 +148,7 @@ def _row(r) -> dict[str, Any]:
     d = dict(r)
     d["days"] = json.loads(d["days"] or "[]")
     d["enabled"] = bool(d["enabled"])
+    d["counts_for_kpi"] = bool(d.get("counts_for_kpi", 1))
     return d
 
 
@@ -151,6 +190,7 @@ def _validate(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("请填写生效日期")
     return {"name": name, "minutes": minutes, "days": days, "start": clocks[0], "end": clocks[1],
             "enabled": bool(data.get("enabled", True)), "effective_from": eff,
+            "counts_for_kpi": data.get("counts_for_kpi"),
             "note": str(data.get("note") or "").strip()[:200]}
 
 
@@ -196,6 +236,12 @@ def save_rule(conn, data: dict[str, Any], *, rule_key: str | None, actor: str) -
         (rule_key, v["name"], v["minutes"], json.dumps(v["days"]), v["start"], v["end"], int(v["enabled"]),
          eff.isoformat(), "admin", v["note"], now, actor[:60]),
     )
+    kpi = v["counts_for_kpi"]
+    if kpi is None:  # 未传时沿用该规则原有设置（新规则默认计入）
+        row = conn.execute("SELECT counts_for_kpi FROM calc_rule WHERE rule_key=? AND id!=last_insert_rowid() "
+                           "ORDER BY id DESC LIMIT 1", (rule_key,)).fetchone()
+        kpi = bool(row[0]) if row else True
+    conn.execute("UPDATE calc_rule SET counts_for_kpi=? WHERE rule_key=?", (int(bool(kpi)), rule_key))
     _mirror_rule_table(conn)
     conn.commit()
     return rule_key, recompute_from
@@ -210,7 +256,7 @@ def _mirror_rule_table(conn) -> None:
             "INSERT INTO timeout_rule(rule_id, rule_name, chat_time_out, extra, updated_at) VALUES (?,?,?,?,?)",
             (g["rule_key"], c["name"], c["minutes"],
              json.dumps({"days": c["days"], "start": c["start_time"], "end": c["end_time"],
-                         "enabled": c["enabled"]}, ensure_ascii=False), c["updated_at"]),
+                         "enabled": c["enabled"], "counts_for_kpi": c["counts_for_kpi"]}, ensure_ascii=False), c["updated_at"]),
         )
 
 
@@ -307,7 +353,7 @@ def apply_filters(root: str, start: date, end: date, *, llm: bool = True) -> dic
             execute_review(root, start, end)
         except Exception:
             log.warning("DeepSeek 复核失败，未复核的消息仍计入", exc_info=True)
-    events, _u, _m, _meta = prepare_events(root, start, end)
+    events, _u, _m, _meta = prepare_events(root, start, end, kpi_only=False)
     # 同一消息命中多条规则：第二条记「重复触发」。若首条被剔除，重复的那条跟着用首条原因，
     # 这样「重复触发」只表示「消息已计入、只是规则多算一次」。
     primary = {ev["msg_id"]: ev.get("reason") or "" for ev in events
