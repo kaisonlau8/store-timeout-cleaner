@@ -39,10 +39,12 @@
     function qs(o) { return Object.keys(o).filter(function (k) { return o[k] !== '' && o[k] != null; }).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(o[k]); }).join('&'); }
 
     function eventItem(e) {
-        return '<li class="sd-item" data-room="' + esc(e.room_id) + '" data-at="' + esc(e.created_at) + '" data-min="' + esc(e.minutes || 30) + '" data-name="' + esc(e.group_name) + '">' +
+        return '<li class="sd-item" data-room="' + esc(e.room_id) + '" data-at="' + esc(e.created_at) + '" data-min="' + esc(e.minutes || 30) + '" data-msg="' + esc(e.msg_id) + '" data-name="' + esc(e.group_name) + '">' +
             '<div class="sd-row"><button type="button" class="sd-link sd-title" data-act="members">' + esc(e.group_name || e.room_id) + '</button></div>' +
             '<div class="sd-row"><span>' + esc(e.created_at) + '</span><span class="sd-tag warn">' + esc(e.rule_name || '超时') + '</span>' +
-            (e.minutes ? '<span>超过 ' + esc(e.minutes) + ' 分钟未回复</span>' : '') + '</div>' +
+            (e.minutes ? '<span>超过 ' + esc(e.minutes) + ' 分钟未回复</span>' : '') +
+            (e.exclude_reason ? '<span class="sd-tag">不计入：' + esc(e.exclude_reason) + '</span>' : '') + '</div>' +
+            (e.content ? '<div class="sd-row sd-quote">' + esc(e.content) + '</div>' : '') +
             '<div class="sd-row"><span>' + esc(e.store || '未归店') + (e.theater ? ' · ' + esc(e.theater) : '') + '</span>' +
             '<button type="button" class="sd-btn" data-act="ctx" aria-expanded="false" style="margin-left:auto">查看聊天上下文</button></div>' +
             '<div class="sd-ctx" hidden></div></li>';
@@ -59,7 +61,7 @@
             getJSON('/api/timeout/events?' + qs(p)).then(function (j) {
                 state.items = state.items.concat(j.events || []); state.offset = state.items.length;
                 if (!state.items.length) { bodyEl.innerHTML = '<div class="sd-empty">当前条件下暂无超时记录</div>'; return; }
-                bodyEl.innerHTML = '<p class="sd-sub">共 ' + j.total + ' 条，按时间倒序。点群名看群成员，点「查看聊天上下文」看前后消息。</p><ul class="sd-list">' +
+                bodyEl.innerHTML = '<p class="sd-sub">' + (params.status === 'excluded' ? '已剔除 ' : '计入 ') + j.total + ' 条，按时间倒序。点群名看群成员，点「查看聊天上下文」看前后消息。</p><ul class="sd-list">' +
                     state.items.map(eventItem).join('') + '</ul>' +
                     (state.items.length < j.total ? '<div class="sd-more"><button type="button" class="sd-btn" data-act="more">加载更多（剩 ' + (j.total - state.items.length) + '）</button></div>' : '');
                 bodyEl._more = page;
@@ -91,11 +93,11 @@
         box.hidden = false; btn.setAttribute('aria-expanded', 'true'); btn.textContent = '收起上下文';
         if (box.dataset.done) return;
         box.innerHTML = '<div class="sd-empty"><span class="sd-spin"></span>加载中</div>';
-        getJSON('/api/timeout/context?' + qs({ room_id: li.dataset.room, at: li.dataset.at, minutes: li.dataset.min })).then(function (j) {
+        getJSON('/api/timeout/context?' + qs({ room_id: li.dataset.room, at: li.dataset.at, minutes: li.dataset.min, msg_id: li.dataset.msg })).then(function (j) {
             box.dataset.done = '1';
             var msgs = j.messages || [];
             if (!msgs.length) { box.innerHTML = '<div class="sd-empty">会话存档在 ' + esc((j.window || []).join(' ~ ')) + ' 内无消息</div>'; return; }
-            box.innerHTML = '<p class="sd-sub">' + esc((j.window || []).join(' ~ ')) + '；橙色为超时前最后一条客户消息</p>' + msgs.map(function (m) {
+            box.innerHTML = '<p class="sd-sub">' + esc((j.window || []).join(' ~ ')) + (j.exact ? '；橙色为触发超时的客户消息' : '；橙色为超时前最后一条客户消息（推算）') + '</p>' + msgs.map(function (m) {
                 return '<div class="sd-msg role-' + esc(m.role) + (m.trigger ? ' trigger' : '') + '"><span class="who">' + esc(m.sender) + '</span><span class="when">' + esc(m.time.slice(11)) + '</span><div class="txt">' + esc(m.text) + '</div></div>';
             }).join('');
         }).catch(function (e) { box.innerHTML = '<div class="sd-err">' + esc(e.message) + '</div>'; });

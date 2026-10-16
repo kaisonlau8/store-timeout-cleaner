@@ -37,8 +37,8 @@ def _seed(root: str) -> None:
             conn.execute(
                 """
                 INSERT INTO timeout_event(
-                  msg_id, rule_id, rule_name, room_id, store, theater, created_at, customer_id, source, room_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  msg_id, rule_id, rule_name, room_id, store, theater, created_at, customer_id, source, room_name, content
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     _msg_id(created_at, room, msg),
@@ -49,8 +49,9 @@ def _seed(root: str) -> None:
                     "",
                     created_at,
                     "",
-                    "excel",
+                    "api",
                     room,
+                    msg,
                 ),
             )
         conn.commit()

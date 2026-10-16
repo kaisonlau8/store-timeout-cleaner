@@ -82,9 +82,37 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE timeout_event ADD COLUMN source TEXT")
     if "room_name" not in cols:
         conn.execute("ALTER TABLE timeout_event ADD COLUMN room_name TEXT")
+    for col in ("content", "msgtype", "exclude_reason"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE timeout_event ADD COLUMN {col} TEXT")
+    _archive_excel(conn)
     group_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_store)")}
     if "create_time" not in group_cols:
         conn.execute("ALTER TABLE chat_store ADD COLUMN create_time TEXT")
+
+
+def _archive_excel(conn: sqlite3.Connection) -> None:
+    """管家 Excel 导入的旧事件挪到 timeout_event_legacy 存档（不删除），页面只用接口算出的事件。"""
+    n = conn.execute("SELECT COUNT(*) FROM timeout_event WHERE source = 'excel'").fetchone()[0]
+    if not n:
+        return
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS timeout_event_legacy AS SELECT * FROM timeout_event WHERE 0"
+    )
+    legacy_cols = {row[1] for row in conn.execute("PRAGMA table_info(timeout_event_legacy)")}
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(timeout_event)")]
+    for col in cols:
+        if col not in legacy_cols:
+            conn.execute(f"ALTER TABLE timeout_event_legacy ADD COLUMN {col} TEXT")
+    names = ", ".join(cols)
+    conn.execute(f"INSERT INTO timeout_event_legacy({names}) SELECT {names} FROM timeout_event WHERE source = 'excel'")
+    conn.execute("DELETE FROM timeout_event WHERE source = 'excel'")
+    conn.execute(
+        "INSERT INTO sync_meta(key, value) VALUES ('legacy_archived', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + excluded.value",
+        (str(n),),
+    )
+    conn.commit()
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:

@@ -164,7 +164,9 @@ def query_meta(root: str) -> dict[str, Any]:
             "theaters": theaters,
             "stores": stores,
             "rules": rules,
-            "imports": list_imports(conn),
+            "imports": [],
+            "source": "api",
+            "last_run": get_meta(conn, "last_run"),
             "min_date": bounds["min_d"] if bounds else None,
             "max_date": bounds["max_d"] if bounds else today.isoformat(),
             "updated_at": get_meta(conn, "updated_at"),
@@ -223,7 +225,9 @@ def query_chart(
         return empty
     try:
         extra, extra_params = _scope_clause(scope, ident, theater=theater, q=q)
-        where = f"created_at >= ? AND created_at < ?{extra}"
+        base_where = f"created_at >= ? AND created_at < ?{extra}"
+        # 计入 = 未被剔除；同一消息命中多条规则时「重复触发」也按各规则计次，但消息数去重
+        where = base_where + " AND ifnull(exclude_reason, '') IN ('', '重复触发(同一消息)')"
         params: list[Any] = [start_sql, end_sql, *extra_params]
         bucket = _bucket_sql(grain)
 
@@ -300,6 +304,15 @@ def query_chart(
             """,
             params,
         ).fetchone()
+        excluded_row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS n,
+                   SUM(CASE WHEN exclude_reason LIKE 'LLM%' THEN 1 ELSE 0 END) AS llm
+            FROM timeout_event
+            WHERE {base_where} AND ifnull(exclude_reason, '') NOT IN ('', '重复触发(同一消息)')
+            """,
+            params,
+        ).fetchone()
         rule_totals = [
             {
                 "rule_id": row["rule_id"],
@@ -370,6 +383,8 @@ def query_chart(
                 "messages": int(totals_row["messages"] or 0) if totals_row else 0,
                 "rooms": int(totals_row["rooms"] or 0) if totals_row else 0,
                 "stores": int(totals_row["stores"] or 0) if totals_row else 0,
+                "excluded": int(excluded_row["n"] or 0) if excluded_row else 0,
+                "llm_excluded": int(excluded_row["llm"] or 0) if excluded_row else 0,
                 "rules": rule_totals,
             },
             "stores": store_rows,

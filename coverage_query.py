@@ -294,6 +294,7 @@ def store_coverage_detail(
     event_cols = {row[1] for row in conn.execute("PRAGMA table_info(timeout_event)")}
     room_name = "e.room_name" if "room_name" in event_cols else "NULL"
     events = []
+    excluded = []
     has_events = False
     if event_cols:
         for row in conn.execute(
@@ -304,9 +305,13 @@ def store_coverage_detail(
             has_events = True
             event = dict(row)
             day = event["created_at"][:10]
-            text = " ".join(str(event.get(key) or "") for key in ("group_name", "rule_name", "msg_id", "room_id"))
+            text = " ".join(str(event.get(key) or "") for key in ("group_name", "rule_name", "msg_id", "room_id", "content", "exclude_reason"))
             if (not query or query in text.casefold()) and (not date_from or day >= date_from) and (not date_to or day <= date_to):
-                events.append(event)
+                reason = event.get("exclude_reason") or ""
+                if not reason:
+                    events.append(event)
+                elif reason != "重复触发(同一消息)":  # 同一消息命中第二条规则，不单列
+                    excluded.append(event)
     if not rows and not has_events:
         return None
     return {
@@ -316,6 +321,7 @@ def store_coverage_detail(
         "robot_count": sum(bool(row["in_robot"]) for row in rows),
         "pending_count": sum(not row["in_robot"] for row in rows),
         "events": events,
+        "excluded": excluded,
         "pending": pending,
         "robot": robot,
     }

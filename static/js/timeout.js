@@ -145,7 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cardHtml('计入超时的消息', totals.messages || 0, '去重后的客户消息 · 点击看明细', {}) +
             cardHtml('规则触发次数', totals.triggers || 0, '各规则合计，一条消息可计多次', {}) +
             cardHtml('触发群数', totals.rooms || 0, '有超时计入的客户群') +
-            cardHtml('涉及门店', totals.stores || 0, '当前筛选范围内');
+            cardHtml('涉及门店', totals.stores || 0, '当前筛选范围内') +
+            cardHtml('已剔除', totals.excluded || 0, '规则过滤 + DeepSeek 复核（其中 DeepSeek ' + (totals.llm_excluded || 0) + '）', { status: 'excluded' });
 
         const ruleCards = document.getElementById('rule-cards');
         const rules = totals.rules || [];
@@ -312,24 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ev.key === 'Enter') queryChart();
     });
 
-    function renderImports(imports) {
-        const tbody = document.querySelector('#import-table tbody');
-        if (!tbody) return;
-        const rows = imports || [];
-        if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#909399">尚未导入。把管家导出放到 input_file/ 或点右上角上传</td></tr>';
-            return;
-        }
-        tbody.innerHTML = rows.map((row) =>
-            '<tr><td>' + escapeHtml((row.range_start || '') + ' ~ ' + (row.range_end || '')) +
-            '</td><td>' + escapeHtml(row.filename || '') +
-            '</td><td>' + (row.rows_in_file || 0) +
-            '</td><td>' + (row.events || 0) +
-            '</td><td>' + (row.unmatched || 0) +
-            '</td><td>' + escapeHtml(row.imported_at || '') + '</td></tr>'
-        ).join('');
-    }
-
     function applyMeta(payload) {
         meta = payload || meta;
         const urlState = readUrl();
@@ -344,51 +327,15 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (meta.max_date) endDate.value = meta.max_date;
         else endDate.value = localISODate();
         const el = document.getElementById('updated-at');
-        if (meta.updated_at) {
-            el.textContent = '最近导入：' + meta.updated_at + ' · 管家回复超时记录 Excel';
-        } else {
-            el.textContent = '导入管家「回复超时记录」Excel，按文件名时间范围登记';
-        }
-        renderImports(meta.imports);
-    }
-
-    function setImportProgress(fileName, percent, status) {
-        const box = document.getElementById('import-progress');
-        const bg = document.getElementById('import-progress-bg');
-        const text = document.getElementById('import-progress-text');
-        const name = document.getElementById('import-progress-name');
-        const bar = document.getElementById('import-progress-bar');
-        if (!box || !bg || !text || !name || !bar) return;
-        box.hidden = false;
-        name.textContent = fileName || '';
-        const shown = Math.max(0, Math.min(100, percent || 0));
-        bg.style.width = shown + '%';
-        text.textContent = shown >= 100 && status !== 'exception' ? '处理中' : (shown + '%');
-        bar.classList.remove('ant-progress-status-active', 'ant-progress-status-success', 'ant-progress-status-exception');
-        if (status === 'exception') bar.classList.add('ant-progress-status-exception');
-        else if (status === 'success' || shown >= 100) bar.classList.add('ant-progress-status-success');
-        else bar.classList.add('ant-progress-status-active');
-    }
-
-    function hideImportProgress() {
-        const box = document.getElementById('import-progress');
-        if (box) box.hidden = true;
-    }
-
-    function importSummary(data) {
-        if (!data || !data.filename) return '已写入超时记录';
-        return (data.filename || '') +
-            ' · ' + (data.range_start || '') + ' ~ ' + (data.range_end || '') +
-            ' · 文件 ' + (data.rows_in_file || 0) + ' 行 · 计入 ' + (data.events || 0) +
-            ' · 未归店 ' + (data.unmatched || 0);
+        el.textContent = meta.updated_at
+            ? '最近计算：' + meta.updated_at + ' · 会话存档自动计算'
+            : '会话存档自动计算，每天 00:00 / 12:00 同步';
     }
 
     async function reloadAll() {
-        const importPanel = document.getElementById('import-panel');
         pushLoad('正在加载', '查询');
-        window.AntdFeedback.setSpin(importPanel, true, '正在加载');
         try {
-            const res = await fetch('/api/timeout/meta?scan=1');
+            const res = await fetch('/api/timeout/meta');
             let payload = {};
             try { payload = await res.json(); } catch (e) { payload = {}; }
             if (!res.ok) throw new Error((payload && payload.error) || '加载失败');
@@ -398,41 +345,8 @@ document.addEventListener('DOMContentLoaded', () => {
             window.AntdFeedback.message('error', '页面数据加载失败');
             if (!endDate.value) endDate.value = localISODate();
         } finally {
-            window.AntdFeedback.setSpin(importPanel, false);
             popLoad();
         }
-    }
-
-    const fileInput = document.getElementById('excel-file');
-    const importError = document.getElementById('import-error');
-    const uploadBtn = document.getElementById('import-upload');
-    if (fileInput) {
-        fileInput.addEventListener('change', async () => {
-            const file = fileInput.files && fileInput.files[0];
-            if (!file) return;
-            importError.hidden = true;
-            window.AntdFeedback.setButtonLoading(uploadBtn, true);
-            setImportProgress(file.name, 0, 'active');
-            try {
-                const data = await window.AntdFeedback.upload('/api/timeout/import', file, {
-                    field: 'file',
-                    onProgress: (pct) => setImportProgress(file.name, pct, pct >= 100 ? 'success' : 'active'),
-                });
-                setImportProgress(file.name, 100, 'success');
-                window.AntdFeedback.notification('success', '导入完成', importSummary(data));
-                hideImportProgress();
-                await reloadAll();
-            } catch (err) {
-                const msg = (err && err.message) || '导入失败';
-                setImportProgress(file.name, 100, 'exception');
-                importError.hidden = false;
-                importError.textContent = msg;
-                window.AntdFeedback.message('error', msg);
-            } finally {
-                window.AntdFeedback.setButtonLoading(uploadBtn, false);
-                fileInput.value = '';
-            }
-        });
     }
 
     reloadAll();
