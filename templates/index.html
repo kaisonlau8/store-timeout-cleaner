@@ -17,12 +17,8 @@
     {{ ds_sprite()|safe }}
     <header class="ant-header"><div class="in">
         <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
-        <nav class="page-nav" aria-label="主导航">
-            <a class="page-nav-link active" href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
-            <a class="page-nav-link" href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>
-            <a class="page-nav-link" href="/groups"><svg class="ai" aria-hidden="true"><use href="#i-team"/></svg>群名统计</a>
-            <a class="page-nav-link" href="/score"><svg class="ai" aria-hidden="true"><use href="#i-audit"/></svg>超时评分</a>
-        </nav>
+        {% set nav_active = 'coverage' %}
+        {% include '_nav.html' %}
         <span class="cl-meta">{% if data %}更新 {{ data.updated_at }}{% else %}每天 00:00 / 12:00 自动同步{% endif %}</span>
     </div></header>
     <div class="container">

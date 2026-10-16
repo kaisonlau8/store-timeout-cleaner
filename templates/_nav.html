@@ -1,0 +1,47 @@
+<button type="button" class="nav-burger" aria-controls="site-nav" aria-expanded="false" aria-label="打开菜单">
+    <span class="nav-burger-lines" aria-hidden="true"></span>
+</button>
+<nav class="page-nav" id="site-nav" aria-label="主导航">
+    <div class="nav-drawer-title">菜单</div>
+    <a class="page-nav-link{% if nav_active == 'coverage' %} active{% endif %}"{% if nav_active == 'coverage' %} aria-current="page"{% endif %} href="/"><svg class="ai" aria-hidden="true"><use href="#i-bar-chart"/></svg>拉群覆盖</a>
+    <a class="page-nav-link{% if nav_active == 'timeout' %} active{% endif %}"{% if nav_active == 'timeout' %} aria-current="page"{% endif %} href="/timeout"><svg class="ai" aria-hidden="true"><use href="#i-clock-circle"/></svg>超时提醒</a>
+    <a class="page-nav-link{% if nav_active == 'groups' %} active{% endif %}"{% if nav_active == 'groups' %} aria-current="page"{% endif %} href="/groups"><svg class="ai" aria-hidden="true"><use href="#i-team"/></svg>群名统计</a>
+    <a class="page-nav-link{% if nav_active == 'score' %} active{% endif %}"{% if nav_active == 'score' %} aria-current="page"{% endif %} href="/score"><svg class="ai" aria-hidden="true"><use href="#i-audit"/></svg>超时评分</a>
+</nav>
+<div class="nav-mask" aria-hidden="true"></div>
+<script>
+(function () {
+    var header = document.querySelector(".ant-header");
+    if (!header || header.getAttribute("data-nav-ready") === "1") return;
+    header.setAttribute("data-nav-ready", "1");
+    var button = header.querySelector(".nav-burger");
+    var mask = header.querySelector(".nav-mask");
+    if (!button) return;
+    var query = window.matchMedia("(max-width: 860px)");
+
+    function setOpen(open) {
+        var show = !!open && query.matches;
+        header.classList.toggle("is-nav-open", show);
+        document.body.classList.toggle("nav-scroll-lock", show);
+        button.setAttribute("aria-expanded", show ? "true" : "false");
+        button.setAttribute("aria-label", show ? "关闭菜单" : "打开菜单");
+    }
+
+    button.addEventListener("click", function () {
+        setOpen(!header.classList.contains("is-nav-open"));
+    });
+    if (mask) mask.addEventListener("click", function () { setOpen(false); });
+    header.addEventListener("click", function (event) {
+        var link = event.target.closest("a");
+        if (link && header.contains(link)) setOpen(false);
+    });
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") setOpen(false);
+    });
+    function onViewportChange() {
+        if (!query.matches) setOpen(false);
+    }
+    if (query.addEventListener) query.addEventListener("change", onViewportChange);
+    else if (query.addListener) query.addListener(onViewportChange);
+})();
+</script>

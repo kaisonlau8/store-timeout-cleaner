@@ -732,26 +732,9 @@ body {
     .big-number {
         font-size: 32px;
     }
-    /* 三页导航在窄屏收紧，避免 390px 溢出 */
-    .page-nav {
-        margin-left: 4px;
-        gap: 2px;
-    }
-    .page-nav-link {
-        padding: 0 6px;
-        font-size: 13px;
-        gap: 4px;
-    }
-    .page-nav-link .ai {
-        display: none;
-    }
     .brand {
         margin-right: 8px;
         font-size: 14px;
-    }
-    .page-nav-link {
-        min-height: 44px;
-        height: 44px;
     }
 }
 
@@ -832,5 +815,154 @@ body {
 .page-nav-link, .theater-chip, .groups-tables th { white-space: nowrap; }
 @media (max-width: 400px) {
     .brand { font-size: 13px; }
-    .page-nav-link { padding: 0 4px; font-size: 12px; }
+}
+
+/* 移动端主导航：汉堡 + 右侧抽屉 + 遮罩。
+   断点 860px，与 antd-lite 4.5/4.6 的汉堡断点一致：
+   <=860px 只显示汉堡，>=861px 保持原来的横排，不出现按钮。
+   进出场都用 transition（不用 display 切换），退场才能播完：
+   抽屉 translateX 0.3s cubic-bezier(0.7, 0.3, 0.1, 1)（Ant Design Drawer），
+   遮罩 opacity 0.3s，汉堡线同步收成关闭图标。 */
+.nav-burger,
+.nav-mask,
+.nav-drawer-title { display: none; }
+
+@media (max-width: 860px) {
+    .ant-header > .in > .cl-meta { display: none; }
+    button.nav-burger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        order: 2;
+        flex: none;
+        width: 44px;
+        height: 44px;
+        min-height: 44px;
+        max-height: 44px;
+        margin-left: auto;
+        padding: 0;
+        border: 1px solid #d9d9d9;
+        border-radius: 6px;
+        background: #fff;
+        color: rgba(0, 0, 0, .88);
+        line-height: 1;
+        cursor: pointer;
+        position: relative;
+        z-index: 3;
+    }
+    button.nav-burger:hover {
+        color: #1677ff;
+        border-color: #1677ff;
+    }
+    .ant-header.is-nav-open button.nav-burger {
+        color: #1677ff;
+        border-color: #1677ff;
+        background: #e6f4ff;
+    }
+    .nav-burger-lines,
+    .nav-burger-lines::before,
+    .nav-burger-lines::after {
+        display: block;
+        width: 16px;
+        height: 2px;
+        border-radius: 1px;
+        background: currentColor;
+    }
+    .nav-burger-lines { position: relative; }
+    .nav-burger-lines::before,
+    .nav-burger-lines::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        transition: transform 0.3s cubic-bezier(0.7, 0.3, 0.1, 1);
+    }
+    .nav-burger-lines::before { top: -5px; }
+    .nav-burger-lines::after { top: 5px; }
+    .ant-header.is-nav-open .nav-burger-lines { background: transparent; }
+    .ant-header.is-nav-open .nav-burger-lines::before { transform: translateY(5px) rotate(45deg); }
+    .ant-header.is-nav-open .nav-burger-lines::after { transform: translateY(-5px) rotate(-45deg); }
+
+    .nav-mask {
+        display: block;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: var(--ant-header-height);
+        background: rgba(0, 0, 0, .45);
+        z-index: 1;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+    }
+    .ant-header.is-nav-open .nav-mask {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition: opacity 0.3s ease, visibility 0s linear 0s;
+    }
+
+    .page-nav {
+        display: flex;
+        position: fixed;
+        z-index: 2;
+        top: var(--ant-header-height);
+        right: 0;
+        bottom: 0;
+        width: min(288px, 84vw);
+        margin: 0;
+        padding: 12px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        background: #fff;
+        border-left: 1px solid #f0f0f0;
+        box-shadow: -6px 0 16px rgba(0, 0, 0, .08);
+        overflow: auto;
+        transform: translateX(100%);
+        visibility: hidden;
+        pointer-events: none;
+        transition: transform 0.3s cubic-bezier(0.7, 0.3, 0.1, 1), visibility 0s linear 0.3s;
+    }
+    .ant-header.is-nav-open .page-nav {
+        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
+        transition: transform 0.3s cubic-bezier(0.7, 0.3, 0.1, 1), visibility 0s linear 0s;
+    }
+    .nav-drawer-title {
+        display: block;
+        margin: 0 0 8px;
+        padding: 4px 12px 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1677ff;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .page-nav-link {
+        width: 100%;
+        height: 44px;
+        min-height: 44px;
+        padding: 0 12px;
+        font-size: 15px;
+        gap: 8px;
+        justify-content: flex-start;
+    }
+    .page-nav-link .ai { display: inline-block; width: 16px; height: 16px; }
+    body.nav-scroll-lock { overflow: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .page-nav,
+    .nav-mask,
+    .ant-header.is-nav-open .page-nav,
+    .ant-header.is-nav-open .nav-mask,
+    .nav-burger-lines,
+    .nav-burger-lines::before,
+    .nav-burger-lines::after,
+    .ant-header.is-nav-open .nav-burger-lines::before,
+    .ant-header.is-nav-open .nav-burger-lines::after {
+        transition: none;
+    }
 }
