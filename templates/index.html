@@ -110,7 +110,7 @@
                 </div>
                 <button class="filter-btn" type="submit">查询</button>
             </form>
-            <p class="chart-hint">战区和门店可同时筛选。战区来自客户群归属。</p>
+            <p class="chart-hint">战区和门店可同时筛选。战区来自客户群归属。点击门店名称查看尚未拉入机器人的群名。</p>
 
             {% macro coverage_table(rows, marker) %}
             <div class="store-table-wrapper">
@@ -128,7 +128,7 @@
                     {% for row in rows %}
                     <tr>
                         <td>{{ loop.index }}</td>
-                        <td>{{ row.name }}</td>
+                        <td data-card-title><a class="store-link" href="{{ coverage_store_href(row.name, coverage.theater, coverage.q) }}">{{ row.name }}</a></td>
                         <td>{{ row.theater or '—' }}</td>
                         <td>{{ row.group_count }}</td>
                         <td>{{ row.robot_group_count }}</td>
@@ -261,7 +261,7 @@
     </script>
     {% endif %}
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/display.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='js/display.js') }}?v=5"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

@@ -1,3 +1,14 @@
+function coverageStoreHref(name) {
+    const params = new URLSearchParams();
+    params.set('name', name);
+    const current = new URLSearchParams(window.location.search);
+    const theater = (current.get('theater') || '').trim();
+    const q = (current.get('q') || '').trim();
+    if (theater) params.set('theater', theater);
+    if (q) params.set('q', q);
+    return '/coverage/store?' + params.toString();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     function escapeHtml(text) {
         return String(text)
@@ -54,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const body = rows.length
             ? rows.map((row, idx) =>
                 '<tr><td>' + (idx + 1) + '</td>' +
-                '<td>' + escapeHtml(row.name) + '</td>' +
+                '<td data-card-title><a class="store-link" href="' + coverageStoreHref(row.name) + '">' + escapeHtml(row.name) + '</a></td>' +
                 '<td>' + escapeHtml(row.theater || '—') + '</td>' +
                 '<td>' + row.group_count + '</td>' +
                 '<td>' + row.robot_group_count + '</td></tr>'

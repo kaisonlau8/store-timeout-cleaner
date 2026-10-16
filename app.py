@@ -12,7 +12,13 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, redirect, render_template, request
 
-from coverage_query import allowed_store_names, build_coverage_view
+from coverage_query import (
+    allowed_store_names,
+    build_coverage_view,
+    coverage_back_href,
+    coverage_store_href,
+    store_coverage_detail,
+)
 from group_keyword import KeywordError, open_ro, query_keyword_groups
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
@@ -41,6 +47,7 @@ def _ds(name: str) -> str:
 app.jinja_env.globals["ds_css"] = lambda: _ds("antd-lite.css")
 app.jinja_env.globals["ds_sprite"] = lambda: _ds("sprite.svg")
 app.jinja_env.globals["ds_cards"] = lambda: _ds("cards.js")
+app.jinja_env.globals["coverage_store_href"] = coverage_store_href
 
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_CLEANER]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
@@ -259,6 +266,30 @@ def index():
             _db_path(),
         )
     return render_template("index.html", has_data=data is not None, data=data, coverage=coverage)
+
+
+@app.route("/coverage/store")
+def coverage_store_page():
+    name = (request.args.get("name") or "").strip()
+    theater = (request.args.get("theater") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    detail = None
+    db_path = _db_path()
+    available = os.path.isfile(db_path)
+    if available and name:
+        conn = open_ro(db_path)
+        try:
+            detail = store_coverage_detail(conn, name)
+        finally:
+            conn.close()
+    return render_template(
+        "coverage_store.html",
+        detail=detail,
+        name=name,
+        available=available,
+        back_href=coverage_back_href(theater, q),
+        nav_active="coverage",
+    )
 
 
 def _export_allowed(data):

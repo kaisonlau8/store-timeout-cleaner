@@ -830,6 +830,66 @@ body {
 
 /* 审阅修正：导航/战区/表头不折行 */
 .page-nav-link, .theater-chip, .groups-tables th { white-space: nowrap; }
+
+.coverage-stores {
+    margin-bottom: 24px;
+}
+
+.coverage-stores .coverage-filters {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    margin-bottom: 12px;
+}
+
+.coverage-filters .export-link {
+    align-self: flex-end;
+}
+
+.coverage-table-wrap {
+    max-height: 480px;
+}
+
+.store-link {
+    color: #1677ff;
+    font-weight: 500;
+}
+
+.store-link:hover {
+    color: #4096ff;
+    text-decoration: underline;
+}
+
+.coverage-summary {
+    margin-bottom: 24px;
+}
+
+.summary-cards.coverage-metrics {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.coverage-groups {
+    margin-bottom: 24px;
+}
+
+.coverage-groups .store-table td:last-child {
+    text-align: left;
+    font-weight: 500;
+    color: rgba(0, 0, 0, .88);
+}
+
+@media (max-width: 768px) {
+    .summary-cards.coverage-metrics {
+        grid-template-columns: 1fr;
+    }
+    .coverage-filters .export-link,
+    .coverage-filters .filter-btn,
+    .coverage-filters select,
+    .coverage-filters input[type="text"] {
+        min-height: 44px;
+    }
+}
 @media (max-width: 400px) {
     .brand { font-size: 13px; }
 }

@@ -216,3 +216,81 @@ def allowed_store_names(data: dict | None, theater: str, query: str, db_path: st
         if row_visible(row, theater, query):
             allowed.add(name)
     return allowed
+
+
+def coverage_back_href(theater: str = "", q: str = "") -> str:
+    """返回拉群覆盖列表，并带上当前战区与门店搜索。"""
+    params: dict[str, str] = {}
+    theater = (theater or "").strip()
+    q = (q or "").strip()
+    if theater:
+        params["theater"] = theater
+    if q:
+        params["q"] = q
+    if not params:
+        return "/"
+    return "/?" + urlencode(params)
+
+
+def coverage_store_href(name: str, theater: str = "", q: str = "") -> str:
+    """门店详情地址。theater / q 原样带回，便于从详情返回筛选结果。"""
+    params: dict[str, str] = {"name": name}
+    theater = (theater or "").strip()
+    q = (q or "").strip()
+    if theater:
+        params["theater"] = theater
+    if q:
+        params["q"] = q
+    return "/coverage/store?" + urlencode(params)
+
+
+def _primary_theater(counts: dict[str, int]) -> str:
+    if not counts:
+        return ""
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _group_row(row: sqlite3.Row) -> dict[str, Any]:
+    in_robot = 1 if int(row["in_robot"] or 0) else 0
+    return {
+        "room_id": row["room_id"],
+        "group_name": row["group_name"] or "",
+        "in_robot": in_robot,
+    }
+
+
+def store_coverage_detail(conn: sqlite3.Connection, store: str) -> dict[str, Any] | None:
+    """一家门店的群名单。pending 为 in_robot 为 0 的群，robot 为已拉入的群。"""
+    name = (store or "").strip()
+    if not name:
+        return None
+    rows = conn.execute(
+        "SELECT room_id, store, theater, group_name, in_robot FROM chat_store "
+        "WHERE TRIM(store) = ?",
+        (name,),
+    ).fetchall()
+    if not rows:
+        return None
+    theaters: dict[str, int] = {}
+    pending = []
+    robot = []
+    for row in rows:
+        item = _group_row(row)
+        if item["in_robot"]:
+            robot.append(item)
+        else:
+            pending.append(item)
+        label = (row["theater"] or "").strip()
+        if label:
+            theaters[label] = theaters.get(label, 0) + 1
+    pending.sort(key=lambda item: (item["group_name"].casefold(), item["room_id"]))
+    robot.sort(key=lambda item: (item["group_name"].casefold(), item["room_id"]))
+    return {
+        "store": name,
+        "theater": _primary_theater(theaters),
+        "group_count": len(rows),
+        "robot_count": len(robot),
+        "pending_count": len(pending),
+        "pending": pending,
+        "robot": robot,
+    }

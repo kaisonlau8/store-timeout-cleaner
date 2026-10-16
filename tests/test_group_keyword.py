@@ -1,3 +1,4 @@
+import importlib
 import json
 import io
 import os
@@ -132,8 +133,9 @@ class GroupsApiTests(unittest.TestCase):
         os.environ.pop("MHERO_AUTH_CLEANER", None)
         import app as app_module
 
-        cls.app = app_module.app
-        cls.client = app_module.app.test_client()
+        cls.app_module = importlib.reload(app_module)
+        cls.app = cls.app_module.app
+        cls.client = cls.app_module.app.test_client()
 
     @classmethod
     def tearDownClass(cls):
