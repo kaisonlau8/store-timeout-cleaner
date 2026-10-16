@@ -192,9 +192,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let loadDepth = 0;
 
-    function pushLoad(tip) {
+    function pushLoad(tip, buttonText) {
         loadDepth += 1;
-        window.AntdFeedback.setButtonLoading(filterBtn, true);
+        if (loadDepth === 1) window.AntdFeedback.setButtonLoading(filterBtn, true, buttonText);
         window.AntdFeedback.setSpin(document.getElementById('timeout-results'), true, tip || '正在查询');
     }
 
@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nested = options && options.nested;
         const q = currentQuery();
         exportLink.href = '/api/timeout/export?' + queryString(q);
-        if (!nested) pushLoad('正在查询');
+        if (!nested) pushLoad('正在查询', '查询中');
         try {
             const res = await fetch('/api/timeout/chart?' + queryString(q));
             let data = {};
@@ -306,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function reloadAll() {
         const importPanel = document.getElementById('import-panel');
-        pushLoad('正在加载');
+        pushLoad('正在加载', '查询');
         window.AntdFeedback.setSpin(importPanel, true, '正在加载');
         try {
             const res = await fetch('/api/timeout/meta?scan=1');

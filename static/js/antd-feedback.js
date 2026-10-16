@@ -103,7 +103,7 @@
     removeLater(notice, duration == null ? 4500 : duration);
   }
 
-  function setButtonLoading(el, loading) {
+  function setButtonLoading(el, loading, text) {
     if (!el) return;
     var on = !!loading;
     if ((el.dataset.antdLoading === "1") === on) return;
@@ -117,7 +117,11 @@
     var label = el.querySelector("[data-btn-label]");
     if (label) {
       if (!label.dataset.idleText) label.dataset.idleText = label.textContent;
-      label.textContent = on && el.dataset.loadingText ? el.dataset.loadingText : label.dataset.idleText;
+      if (on) {
+        label.textContent = text != null ? String(text) : (el.dataset.loadingText || label.dataset.idleText);
+      } else {
+        label.textContent = label.dataset.idleText;
+      }
     }
 
     var spin = el.querySelector(":scope > .ant-btn-loading-icon");

@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -244,7 +244,7 @@
         window.MONTHLY_MONTHS = {{ data.stats.monthly.months | tojson }};
     </script>
     {% endif %}
-    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=1"></script>
+    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='js/display.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
