@@ -527,11 +527,12 @@ class CacheAndScoreTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 202)
         self.assertTrue(job.call_args.kwargs.get("force"))
 
-    def test_sync_script_waits_for_background_review(self):
+    def test_sync_script_runs_algorithm_with_review(self):
         path = os.path.join(os.path.dirname(__file__), "..", "scripts", "sync_timeout.py")
         with open(path, encoding="utf-8") as handle:
             script = handle.read()
-        self.assertIn("wait_review_jobs", script)
+        self.assertIn("run_timeout_sync", script)
+        self.assertNotIn("scan_input_dir", script)
 
 
 if __name__ == "__main__":

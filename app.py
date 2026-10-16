@@ -25,7 +25,7 @@ from group_keyword import KeywordError, open_ro, query_keyword_groups
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
 from score_web import register_score
-from timeout_excel import ExcelImportError, import_excel_file, parse_filename_range, scan_input_dir
+import timeout_algo
 from timeout_query import query_chart, query_meta
 import stc_live
 from timeout_store import connect, replace_context
@@ -54,7 +54,7 @@ app.jinja_env.globals["coverage_store_href"] = coverage_store_href
 
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_CLEANER]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
-_mhero_auth_init(app, "cleaner", default_mode="off", public_get_paths=["/static/brand/*"])
+_mhero_auth_init(app, "cleaner", default_mode="off", public_get_paths=["/static/brand/*"], admin_paths=["/admin/*", "/api/admin/*"])
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 # 开发环境可用 CLEANER_DB_PATH / CLEANER_DATA_FILE 指向真实数据副本；默认不变
 DATA_FILE = os.environ.get("CLEANER_DATA_FILE") or os.path.join(ROOT, "data.json")
@@ -123,19 +123,53 @@ def _run_group_and_timeout():
 
 
 def run_sync():
+    """定时任务：先同步客户群，再拉会话存档按规则计算超时（同一时刻 00:00 / 12:00）。"""
     lock_fh = _acquire_sync_lock()
     try:
-        return _run_group_and_timeout()
+        summary = _run_group_and_timeout()
+        try:
+            summary["timeout"] = timeout_algo.run(ROOT, label="cron")
+        except Exception:
+            logging.exception("超时计算失败，拉群覆盖数据已保存")
+        return summary
     finally:
         _release_sync_lock(lock_fh)
 
 
-def run_timeout_sync():
+def run_timeout_sync(**kw):
     lock_fh = _acquire_sync_lock()
     try:
-        return scan_input_dir(ROOT)
+        return timeout_algo.run(ROOT, **kw)
     finally:
         _release_sync_lock(lock_fh)
+
+
+def _is_admin() -> bool:
+    from flask import g
+    s = getattr(g, "mhero_session", None)
+    if s is None:
+        return False
+    return getattr(s, "role", "") == "admin"
+
+
+def _actor() -> str:
+    from flask import g
+    s = getattr(g, "mhero_session", None)
+    return (getattr(s, "dn", "") or getattr(s, "name", "") or "admin") if s else "admin"
+
+
+@app.context_processor
+def _inject_admin():
+    try:
+        return {"is_admin": _is_admin()}
+    except Exception:
+        return {"is_admin": False}
+
+
+try:
+    timeout_algo.open_db(ROOT).close()  # 建表/迁移/播种规则
+except Exception:
+    logging.exception("初始化超时规则表失败")
 
 
 def _data_path() -> str:
@@ -310,7 +344,7 @@ def store_page(store_key):
         detail = {
             "store": name, "theater": "", "group_count": group_count,
             "robot_count": robot_count, "pending_count": max(0, group_count - robot_count),
-            "pending": [], "robot": [], "events": [], "snapshot_only": True,
+            "pending": [], "robot": [], "events": [], "excluded": [], "snapshot_only": True,
         }
     return render_template(
         "coverage_store.html",
@@ -419,11 +453,6 @@ def export_all_csv():
 
 @app.route("/api/timeout/meta")
 def timeout_meta_api():
-    if request.args.get("scan") == "1":
-        try:
-            scan_input_dir(ROOT)
-        except Exception:
-            logging.exception("扫描 input_file 失败")
     return jsonify(query_meta(ROOT))
 
 
@@ -467,6 +496,7 @@ def timeout_events_api():
             start=(request.args.get("start") or "").strip(),
             end=(request.args.get("end") or "").strip(),
             limit=limit, offset=offset,
+            status=(request.args.get("status") or "valid").strip(),
         )
     except ValueError:
         abort(400, description="日期格式应为 YYYY-MM-DD")
@@ -497,38 +527,86 @@ def timeout_context_api():
     except ValueError:
         minutes = 30
     try:
-        return jsonify(stc_live.chat_context(ROOT, room_id, at, min(max(minutes, 1), 240)))
+        msg_id = (request.args.get("msg_id") or "").strip()[:120]
+        return jsonify(stc_live.chat_context(ROOT, room_id, at, min(max(minutes, 1), 240), msg_id=msg_id))
     except Exception as exc:
         logging.exception("拉取会话上下文失败")
         return jsonify({"error": "SCRM 会话存档接口暂不可用：" + type(exc).__name__}), 502
 
 
 @app.route("/api/timeout/import", methods=["POST"])
-def timeout_import_api():
-    uploaded = request.files.get("file")
-    if uploaded is None or not uploaded.filename:
-        return jsonify({"error": "请选择管家导出的 Excel"}), 400
-    filename = os.path.basename(uploaded.filename)
-    if not filename.lower().endswith((".xlsx", ".xls")):
-        return jsonify({"error": "只支持 .xlsx"}), 400
-    try:
-        parse_filename_range(filename)
-    except ExcelImportError as exc:
-        return jsonify({"error": str(exc)}), 400
-    dest_dir = os.path.join(ROOT, "input_file")
-    os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, filename)
-    uploaded.save(dest)
-    try:
-        result = import_excel_file(ROOT, dest, force=True)
-    except ExcelImportError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify(result)
-
-
 @app.route("/api/timeout/import-scan", methods=["POST"])
-def timeout_import_scan_api():
-    return jsonify(scan_input_dir(ROOT, force=bool(request.args.get("force"))))
+def timeout_import_gone():
+    return jsonify({"error": "Excel 导入已停用：超时改由会话存档自动计算"}), 410
+
+
+@app.route("/admin/rules")
+def admin_rules_page():
+    if not _is_admin():
+        abort(403)
+    return render_template("admin_rules.html", nav_active="admin")
+
+
+@app.route("/api/admin/rules")
+def admin_rules_list():
+    if not _is_admin():
+        abort(403)
+    conn = timeout_algo.open_db(ROOT)
+    try:
+        rules = timeout_algo.list_rules(conn)
+        from timeout_store import get_meta
+        last = get_meta(conn, "last_run")
+        days = conn.execute("SELECT MIN(day), MAX(day), COUNT(*) FROM chat_msg_day").fetchone()
+    finally:
+        conn.close()
+    return jsonify({"rules": rules, "job": timeout_algo.job_status(),
+                    "last_run": json.loads(last) if last else None,
+                    "archive": {"from": days[0], "to": days[1], "days": days[2]}})
+
+
+def _start_recompute(start):
+    started = timeout_algo.start_background(ROOT, start=start, fetch=False, label="规则变更重算")
+    return started
+
+
+@app.route("/api/admin/rules", methods=["POST"])
+@app.route("/api/admin/rules/<rule_key>", methods=["POST"])
+def admin_rules_save(rule_key=None):
+    if not _is_admin():
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    conn = timeout_algo.open_db(ROOT)
+    try:
+        key, since = timeout_algo.save_rule(conn, data, rule_key=rule_key, actor=_actor())
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except KeyError:
+        return jsonify({"error": "规则不存在"}), 404
+    finally:
+        conn.close()
+    started = _start_recompute(since)
+    return jsonify({"rule_key": key, "recompute_from": since.isoformat(), "started": started,
+                    "job": timeout_algo.job_status()})
+
+
+@app.route("/api/admin/recompute", methods=["POST"])
+def admin_recompute():
+    if not _is_admin():
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    try:
+        start = date.fromisoformat(str(data.get("start"))[:10]) if data.get("start") else None
+    except ValueError:
+        return jsonify({"error": "日期格式应为 YYYY-MM-DD"}), 400
+    started = timeout_algo.start_background(ROOT, start=start, fetch=bool(data.get("fetch")), label="手动重算")
+    return jsonify({"started": started, "job": timeout_algo.job_status()})
+
+
+@app.route("/api/admin/job")
+def admin_job():
+    if not _is_admin():
+        abort(403)
+    return jsonify(timeout_algo.job_status())
 
 
 @app.route("/api/timeout/export")

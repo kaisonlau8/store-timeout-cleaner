@@ -22,10 +22,11 @@ class FeedbackSurfaceTests(unittest.TestCase):
         self.assertEqual(index.count("data-antd-export"), 5)
         timeout = read("templates/timeout.html")
         self.assertIn('id="export-link" data-antd-export', timeout)
-        self.assertIn('id="import-progress"', timeout)
+        self.assertNotIn('id="import-progress"', timeout)
+        self.assertIn('source-alert', timeout)
         self.assertIn('id="timeout-results"', timeout)
         self.assertIn('data-loading-text="查询中"', timeout)
-        self.assertIn('data-loading-text="上传中"', timeout)
+        self.assertNotIn('excel-file', timeout)
 
     def test_feedback_css_uses_antd_patterns(self):
         css = read("static/css/antd-feedback.css")
@@ -45,9 +46,12 @@ class FeedbackSurfaceTests(unittest.TestCase):
         for name in ("message", "notification", "setButtonLoading", "setSpin", "upload"):
             self.assertIn(name, js)
         timeout = read("static/js/timeout.js")
-        self.assertIn("AntdFeedback.setSpin", timeout)
-        self.assertIn("AntdFeedback.upload", timeout)
-        self.assertIn("AntdFeedback.notification", timeout)
+        self.assertIn("AntdFeedback.message", timeout)
+        self.assertNotIn("AntdFeedback.upload", timeout)
+        admin = read("static/js/admin-rules.js")
+        self.assertIn("FB.notification", admin)
+        self.assertIn("FB.setButtonLoading", admin)
+        self.assertIn("ant-progress-status-active", admin)
         self.assertNotIn("feishu", timeout.lower())
 
     def test_no_login_page_invented(self):

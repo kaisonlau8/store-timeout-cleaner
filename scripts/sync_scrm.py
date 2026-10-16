@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从企微 SCRM 全量同步客户群统计。由 launchd 每天 00:00 / 12:00 调用。"""
+"""从企微 SCRM 全量同步客户群统计，随后按会话存档计算超时。由 cron 每天 00:00 / 12:00 调用。"""
 
 from __future__ import annotations
 
@@ -26,6 +26,11 @@ def main() -> int:
         summary.get("filter_total"),
         ",".join(r.get("username", "") for r in summary.get("robots") or []),
     )
+    t = summary.get("timeout")
+    if t:
+        logging.info("超时计算 %s~%s 天=%s 拉取=%s 事件=%s 计入=%s 规则剔除=%s DeepSeek剔除=%s",
+                     t.get("start"), t.get("end"), t.get("days"), t.get("fetched_days"), t.get("total"),
+                     t.get("valid"), t.get("rule_excluded"), t.get("llm_excluded"))
     return 0
 
 

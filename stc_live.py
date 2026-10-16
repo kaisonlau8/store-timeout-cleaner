@@ -106,11 +106,15 @@ def group_members(root: str, room_id: str) -> list[dict[str, Any]]:
     return members
 
 
-def chat_context(root: str, room_id: str, at: str, rule_minutes: int = 30) -> dict[str, Any]:
+def chat_context(root: str, room_id: str, at: str, rule_minutes: int = 30, msg_id: str = "") -> dict[str, Any]:
     """返回超时时间点附近的群消息。高亮该时间点之前最后一条客户消息（未被回复的那条）。"""
     t = datetime.strptime(at[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=SHANGHAI)
-    start = int((t - timedelta(minutes=max(rule_minutes, 10) + 30)).timestamp())
-    end = int((t + timedelta(minutes=30)).timestamp())
+    if msg_id:  # at = 客户发言时间：看前 20 分钟到截止后 10 分钟
+        start = int((t - timedelta(minutes=20)).timestamp())
+        end = int((t + timedelta(minutes=rule_minutes + 10)).timestamp())
+    else:
+        start = int((t - timedelta(minutes=max(rule_minutes, 10) + 30)).timestamp())
+        end = int((t + timedelta(minutes=30)).timestamp())
 
     def load():
         payload = _get_client(root)._request(
@@ -134,6 +138,10 @@ def chat_context(root: str, room_id: str, at: str, rule_minutes: int = 30) -> di
         is_customer = (member["role"] == "customer") if member else sender.startswith(("wm", "wo"))
         if is_customer and (r.get("msgtime") or 0) <= t_ms:
             hl = idx
+    if msg_id:
+        exact = next((i for i, r in enumerate(recs) if str(r.get("msgid") or "") == msg_id), None)
+        if exact is not None:
+            hl = exact
     msgs = []
     for idx, r in enumerate(recs):
         sender = str(r.get("from") or "")
@@ -150,13 +158,17 @@ def chat_context(root: str, room_id: str, at: str, rule_minutes: int = 30) -> di
             "text": text[:500],
             "trigger": idx == hl,
         })
-    return {"messages": msgs, "window": [_fmt_ts(start), _fmt_ts(end)]}
+    return {"messages": msgs, "window": [_fmt_ts(start), _fmt_ts(end)], "exact": bool(msg_id) and hl is not None and str(recs[hl].get("msgid") or "") == msg_id}
 
 
 def query_events(conn: sqlite3.Connection, *, theater: str = "", q: str = "", store: str = "",
                  rule_id: str = "", start: str = "", end: str = "", room_id: str = "",
-                 limit: int = 200, offset: int = 0) -> dict[str, Any]:
+                 limit: int = 200, offset: int = 0, status: str = "valid") -> dict[str, Any]:
     clauses, params = ["1=1"], []
+    if status == "valid":
+        clauses.append("ifnull(e.exclude_reason, '') = ''")
+    elif status == "excluded":
+        clauses.append("ifnull(e.exclude_reason, '') NOT IN ('', '重复触发(同一消息)')")
     if theater:
         clauses.append("e.theater = ?"); params.append(theater)
     if store:
@@ -176,6 +188,7 @@ def query_events(conn: sqlite3.Connection, *, theater: str = "", q: str = "", st
     total = conn.execute(f"SELECT COUNT(*) FROM timeout_event e WHERE {where}", params).fetchone()[0]
     rows = conn.execute(
         "SELECT e.msg_id, e.rule_id, e.rule_name, e.room_id, e.store, e.theater, e.created_at, "
+        "ifnull(e.content, '') AS content, ifnull(e.exclude_reason, '') AS exclude_reason, "
         "COALESCE(NULLIF(e.room_name,''), NULLIF(c.group_name,''), e.room_id) AS group_name, "
         "COALESCE(r.chat_time_out, 0) AS minutes "
         "FROM timeout_event e LEFT JOIN chat_store c ON c.room_id = e.room_id "

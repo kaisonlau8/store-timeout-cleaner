@@ -112,6 +112,14 @@ def in_rule_window(dt: datetime, rule: TimeoutRule) -> bool:
     return clock >= start or clock <= end
 
 
+EXTERNAL_PREFIXES = ("wm", "wo")
+
+
+def is_staff(from_id: str, employee_set: set[str]) -> bool:
+    """企业成员：在通讯录里，或不是外部联系人 ID（wm/wo 开头）。离职/未同步到通讯录的员工也算。"""
+    return from_id in employee_set or not from_id.startswith(EXTERNAL_PREFIXES)
+
+
 def detect_timeout_events(
     messages: Iterable[dict[str, Any]],
     rules: Iterable[TimeoutRule],
@@ -147,9 +155,9 @@ def detect_timeout_events(
     events: list[dict[str, Any]] = []
     for room_id, items in by_room.items():
         items.sort(key=lambda row: row[0])
-        emp_times = [dt for dt, from_id, _ in items if from_id in employee_set]
+        emp_times = [dt for dt, from_id, _ in items if is_staff(from_id, employee_set)]
         for dt, from_id, msgid in items:
-            if from_id in employee_set:
+            if is_staff(from_id, employee_set):
                 continue
             for rule in active_rules:
                 if not in_rule_window(dt, rule):

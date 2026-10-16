@@ -260,6 +260,26 @@ def _group_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
+def _merge_rules(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """同一条客户消息命中多条规则时合成一行，规则名并列。"""
+    out: dict[str, dict[str, Any]] = {}
+    for ev in items:
+        key = ev.get("msg_id") or id(ev)
+        cur = out.get(key)
+        if cur is None:
+            out[key] = dict(ev)
+            continue
+        names = [n for n in (cur.get("rule_name") or "").split(" / ") if n]
+        if ev.get("rule_name") and ev["rule_name"] not in names:
+            names.append(ev["rule_name"])
+        cur["rule_name"] = " / ".join(sorted(names))
+        if not (cur.get("exclude_reason") or "") or ev.get("exclude_reason") == "":
+            cur["exclude_reason"] = cur.get("exclude_reason") or ""
+    merged = list(out.values())
+    merged.sort(key=lambda e: (e.get("created_at") or "", e.get("msg_id") or ""), reverse=True)
+    return merged
+
+
 def store_coverage_detail(
     conn: sqlite3.Connection, store: str, *, q: str = "", group_from: str = "",
     group_to: str = "", date_from: str = "", date_to: str = "",
@@ -294,6 +314,8 @@ def store_coverage_detail(
     event_cols = {row[1] for row in conn.execute("PRAGMA table_info(timeout_event)")}
     room_name = "e.room_name" if "room_name" in event_cols else "NULL"
     events = []
+    excluded = []
+    dup_rows = []
     has_events = False
     if event_cols:
         for row in conn.execute(
@@ -304,9 +326,17 @@ def store_coverage_detail(
             has_events = True
             event = dict(row)
             day = event["created_at"][:10]
-            text = " ".join(str(event.get(key) or "") for key in ("group_name", "rule_name", "msg_id", "room_id"))
+            text = " ".join(str(event.get(key) or "") for key in ("group_name", "rule_name", "msg_id", "room_id", "content", "exclude_reason"))
             if (not query or query in text.casefold()) and (not date_from or day >= date_from) and (not date_to or day <= date_to):
-                events.append(event)
+                reason = event.get("exclude_reason") or ""
+                if not reason:
+                    events.append(event)
+                elif reason == "重复触发(同一消息)":  # 同一消息命中第二条规则：并到首条
+                    dup_rows.append(event)
+                else:
+                    excluded.append(event)
+    events = _merge_rules(events + dup_rows)
+    excluded = _merge_rules(excluded)
     if not rows and not has_events:
         return None
     return {
@@ -316,6 +346,7 @@ def store_coverage_detail(
         "robot_count": sum(bool(row["in_robot"]) for row in rows),
         "pending_count": sum(not row["in_robot"] for row in rows),
         "events": events,
+        "excluded": excluded,
         "pending": pending,
         "robot": robot,
     }

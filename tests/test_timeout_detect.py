@@ -58,14 +58,14 @@ class DetectTests(unittest.TestCase):
         self.staff = ["1001"]
 
     def test_no_reply_hits_both_rules(self):
-        messages = [msg("m1", "room-a", "ext-1", "2026-08-12T10:00:00")]
+        messages = [msg("m1", "room-a", "wm-ext-1", "2026-08-12T10:00:00")]
         events = detect_timeout_events(messages, [self.ten, self.thirty], self.staff, self.rooms)
         self.assertEqual({e["rule_id"] for e in events}, {"10", "30"})
         self.assertEqual({e["msg_id"] for e in events}, {"m1"})
 
     def test_staff_reply_cancels(self):
         messages = [
-            msg("m1", "room-a", "ext-1", "2026-08-12T10:00:00"),
+            msg("m1", "room-a", "wm-ext-1", "2026-08-12T10:00:00"),
             msg("m2", "room-a", "1001", "2026-08-12T10:05:00"),
         ]
         events = detect_timeout_events(messages, [self.ten, self.thirty], self.staff, self.rooms)
@@ -73,30 +73,30 @@ class DetectTests(unittest.TestCase):
 
     def test_late_reply_still_counts_ten_not_thirty(self):
         messages = [
-            msg("m1", "room-a", "ext-1", "2026-08-12T10:00:00"),
+            msg("m1", "room-a", "wm-ext-1", "2026-08-12T10:00:00"),
             msg("m2", "room-a", "1001", "2026-08-12T10:15:00"),
         ]
         events = detect_timeout_events(messages, [self.ten, self.thirty], self.staff, self.rooms)
         self.assertEqual([e["rule_id"] for e in events], ["10"])
 
     def test_outside_hours(self):
-        messages = [msg("m1", "room-a", "ext-1", "2026-08-12T08:00:00")]
+        messages = [msg("m1", "room-a", "wm-ext-1", "2026-08-12T08:00:00")]
         events = detect_timeout_events(messages, [self.ten], self.staff, self.rooms)
         self.assertEqual(events, [])
 
     def test_deadline_after_window(self):
-        messages = [msg("m1", "room-a", "ext-1", "2026-08-12T19:55:00")]
+        messages = [msg("m1", "room-a", "wm-ext-1", "2026-08-12T19:55:00")]
         events = detect_timeout_events(messages, [self.ten], self.staff, self.rooms)
         self.assertEqual(events, [])
 
     def test_weekend_skips_weekday_rule(self):
         # 2026-08-08 is Saturday
-        messages = [msg("m1", "room-a", "ext-1", "2026-08-08T10:00:00")]
+        messages = [msg("m1", "room-a", "wm-ext-1", "2026-08-08T10:00:00")]
         events = detect_timeout_events(messages, [self.ten, self.thirty], self.staff, self.rooms)
         self.assertEqual([e["rule_id"] for e in events], ["10"])
 
     def test_ignores_non_robot_room(self):
-        messages = [msg("m1", "room-b", "ext-1", "2026-08-12T10:00:00")]
+        messages = [msg("m1", "room-b", "wm-ext-1", "2026-08-12T10:00:00")]
         events = detect_timeout_events(messages, [self.ten], self.staff, self.rooms)
         self.assertEqual(events, [])
 
@@ -119,3 +119,11 @@ class DetectTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaffIdTests(unittest.TestCase):
+    def test_internal_id_missing_from_directory_counts_as_staff(self):
+        from timeout_detect import is_staff
+        self.assertTrue(is_staff("23862", {"1001"}))
+        self.assertFalse(is_staff("wmABC", {"1001"}))
+        self.assertFalse(is_staff("woXYZ", set()))

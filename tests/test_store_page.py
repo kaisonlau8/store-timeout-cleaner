@@ -71,7 +71,7 @@ def test_new_route_full_lists_and_events(store_client):
     assert "msg-other" not in events
     assert "历史归档群" in events and LONG_NAME in events
     assert events.index("msg-next") < events.index("msg-end") < events.index("msg-start")
-    assert html.count('<th data-card-title>群名</th>') == 3
+    assert html.count('<th data-card-title>群名</th>') == 4
     assert "ant-table-cards" in html
 
 
@@ -174,6 +174,6 @@ class StoreCollapseTemplateTests(unittest.TestCase):
         html = (Path(__file__).resolve().parent.parent / "templates" / "coverage_store.html").read_text(encoding="utf-8")
         for sid in ("store-filter-panel", "pending-groups", "robot-groups", "timeout-events"):
             self.assertIn(f'id="{sid}"', html)
-        self.assertEqual(html.count('<details class="ant-collapse store-collapse stat-block'), 3)
+        self.assertEqual(html.count('<details class="ant-collapse store-collapse stat-block'), 4)
         self.assertIn("store-count", html)
         self.assertIn("summary-cards", html)

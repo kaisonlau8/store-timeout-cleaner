@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>超时计算规则</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
+    <style>{{ ds_css()|safe }}</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-rules.css') }}?v=2">
+</head>
+<body>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
+        {% include '_nav.html' %}
+        <span class="cl-meta">管理员</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header">
+            <div class="ant-page-header-heading">
+                <h1>超时计算规则</h1>
+                <div class="ant-page-header-sub">本地计算口径，不写回 SCRM，不影响管家真实的超时提醒。改规则后按生效日起自动重算。</div>
+            </div>
+            <div class="ant-page-header-actions rules-actions">
+                <button type="button" class="ant-btn" id="btn-recompute"><svg class="ai" aria-hidden="true"><use href="#i-reload"/></svg><span data-btn-label>全部重算</span></button>
+                <button type="button" class="ant-btn ant-btn-primary" id="btn-new"><svg class="ai" aria-hidden="true"><use href="#i-plus"/></svg><span data-btn-label>新建规则</span></button>
+            </div>
+        </header>
+
+        <div class="stat-block job-block" id="job-block" hidden>
+            <div class="job-head"><span id="job-phase">计算中</span><span class="cl-muted" id="job-count"></span></div>
+            <div class="ant-progress ant-progress-line ant-progress-status-active ant-progress-show-info" id="job-bar">
+                <div class="ant-progress-outer"><div class="ant-progress-inner"><div class="ant-progress-bg" id="job-bg" style="width:0%"></div></div></div>
+                <span class="ant-progress-text" id="job-text">0%</span>
+            </div>
+        </div>
+
+        <div class="stat-block">
+            <div class="table-head"><h3>规则列表</h3><span class="cl-muted" id="archive-info"></span></div>
+            <div class="store-table-wrapper">
+                <table class="store-table rules-table" id="rules-table">
+                    <thead><tr><th data-card-title>规则名称</th><th>超时</th><th>生效星期</th><th>时段</th><th>生效日期</th><th>状态</th><th>操作</th></tr></thead>
+                    <tbody><tr><td colspan="7" class="cl-muted" style="text-align:center">加载中</td></tr></tbody>
+                </table>
+            </div>
+            <p class="chart-hint">客户在规则时段内发言，且截止时刻（也须在时段内）之前同群没有企业成员回复，即记一次超时。同一条消息命中多条规则只算一条消息。每条超时再经过规则过滤（重复、话术、寒暄/表情、仅@、30 分钟连发）和 DeepSeek 复核，剔除的不计入评分。</p>
+        </div>
+
+        <div class="stat-block" id="last-run-block" hidden>
+            <div class="table-head"><h3>最近一次计算</h3></div>
+            <div class="summary-cards" id="last-run"></div>
+        </div>
+    </div>
+
+    <div class="rule-mask" id="rule-mask" hidden></div>
+    <div class="rule-modal" id="rule-modal" role="dialog" aria-modal="true" aria-labelledby="rule-title" hidden>
+        <div class="rule-modal-head"><h3 id="rule-title">新建规则</h3><button type="button" class="rule-x" id="rule-x" aria-label="关闭">×</button></div>
+        <form id="rule-form" class="rule-form" novalidate>
+            <label>规则名称<input name="name" maxlength="60" required placeholder="如 30 分钟未回复预警"></label>
+            <label>超时分钟<input name="minutes" type="number" min="1" max="240" required></label>
+            <fieldset><legend>生效星期</legend><div class="day-pills" id="day-pills">
+                {% for d, t in [(1,'一'),(2,'二'),(3,'三'),(4,'四'),(5,'五'),(6,'六'),(7,'日')] %}<label class="day-pill"><input type="checkbox" name="days" value="{{ d }}"><span>周{{ t }}</span></label>{% endfor %}
+            </div></fieldset>
+            <div class="rule-row2">
+                <label>开始时间<input name="start" type="time" required></label>
+                <label>结束时间<input name="end" type="time" required></label>
+            </div>
+            <label>生效日期<input name="effective_from" type="date" required></label>
+            <p class="cl-muted rule-tip" id="rule-tip">修改时：生效日之前的历史仍按旧版本计算；生效日早于等于当前版本时直接覆盖当前版本。</p>
+            <label class="rule-check"><input type="checkbox" name="enabled" checked> 启用</label>
+            <label>备注<input name="note" maxlength="200" placeholder="可选"></label>
+            <p class="error-msg" id="rule-error" hidden></p>
+            <div class="rule-modal-foot">
+                <button type="button" class="ant-btn" id="rule-cancel">取消</button>
+                <button type="submit" class="ant-btn ant-btn-primary" id="rule-save"><span data-btn-label>保存并重算</span></button>
+            </div>
+        </form>
+    </div>
+    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=2"></script>
+    <script>{{ ds_cards()|safe }}</script>
+</body>
+</html>

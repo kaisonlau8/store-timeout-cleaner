@@ -12,7 +12,7 @@
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=3">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -80,7 +80,7 @@
             <div class="card sd-clickable" role="button" tabindex="0" title="点击查看超时预警明细" data-sd-title="{{ detail.store }} · 超时预警明细" data-sd-events="{{ {'store': detail.store, 'start': filters.date_from, 'end': filters.date_to}|tojson|forceescape }}">
                 <h4>超时预警</h4>
                 <div class="stat-row">
-                    <span class="label">点击看明细</span>
+                    <span class="label">计入 · 剔除 {{ detail.excluded|length }}</span>
                     <span class="value">{{ detail.events|length }}</span>
                 </div>
             </div>
@@ -98,7 +98,7 @@
             {% if request.args.get('back_q') %}<input type="hidden" name="back_q" value="{{ request.args.get('back_q') }}">{% endif %}
             <div class="selector-group store-search">
                 <label for="store-q">搜索群与超时记录</label>
-                <input type="search" id="store-q" name="q" value="{{ q }}" placeholder="群名、群 ID；超时支持规则名、消息 ID">
+                <input type="search" id="store-q" name="q" value="{{ q }}" placeholder="群名、群 ID；超时支持消息内容、规则名、剔除原因">
             </div>
             {% for key, label in [('group_from', '群创建日期起'), ('group_to', '群创建日期止'), ('date_from', '超时时间起'), ('date_to', '超时时间止')] %}
             <div class="selector-group">
@@ -150,16 +150,33 @@
             </div>
         </details>
         <details class="ant-collapse store-collapse stat-block coverage-groups" id="timeout-events">
-            <summary class="ant-collapse-header"><span class="ant-collapse-arrow" aria-hidden="true"></span><span class="ant-collapse-title">超时明细</span><span class="ant-badge-count store-count">{{ detail.events|length }}</span></summary>
+            <summary class="ant-collapse-header"><span class="ant-collapse-arrow" aria-hidden="true"></span><span class="ant-collapse-title">超时明细（计入）</span><span class="ant-badge-count store-count">{{ detail.events|length }}</span></summary>
             <div class="ant-collapse-content">
             <div class="store-table-wrapper">
                 <table class="store-table">
-                    <thead><tr><th data-card-title>群名</th><th>超时时间</th><th>规则名称</th><th>详情</th></tr></thead>
+                    <thead><tr><th data-card-title>群名</th><th>客户发言时间</th><th>消息</th><th>规则名称</th><th>详情</th></tr></thead>
                     <tbody>
                         {% for row in detail.events %}
-                        <tr><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10]}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
+                        <tr data-msg="{{ row.msg_id }}"><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td class="cell-msg">{{ (row.content or '')[:80] }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10], 'status': 'valid'}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
                         {% else %}
-                        <tr><td colspan="4" class="cl-muted">当前条件下暂无超时记录</td></tr>
+                        <tr><td colspan="5" class="cl-muted">当前条件下暂无超时记录</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            </div>
+        </details>
+        <details class="ant-collapse store-collapse stat-block coverage-groups" id="timeout-excluded">
+            <summary class="ant-collapse-header"><span class="ant-collapse-arrow" aria-hidden="true"></span><span class="ant-collapse-title">已剔除（不计入）</span><span class="ant-badge-count store-count">{{ detail.excluded|length }}</span></summary>
+            <div class="ant-collapse-content">
+            <div class="store-table-wrapper">
+                <table class="store-table">
+                    <thead><tr><th data-card-title>群名</th><th>客户发言时间</th><th>消息</th><th>规则名称</th><th>剔除原因</th><th>详情</th></tr></thead>
+                    <tbody>
+                        {% for row in detail.excluded %}
+                        <tr data-msg="{{ row.msg_id }}"><td data-card-title>{% if row.room_id %}<button type="button" class="sd-link" data-sd-members="{{ row.room_id }}" data-sd-name="{{ row.group_name or '（未知群）' }}" title="查看群成员">{{ row.group_name or '（未知群）' }}</button>{% else %}{{ row.group_name or '（未知群）' }}{% endif %}</td><td>{{ row.created_at }}</td><td class="cell-msg">{{ (row.content or '')[:80] }}</td><td>{{ row.rule_name or '（未知规则）' }}</td><td><span class="ant-tag">{{ row.exclude_reason }}</span></td><td>{% if row.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'store': detail.store, 'room_id': row.room_id, 'start': row.created_at[:10], 'end': row.created_at[:10], 'status': 'excluded'}|tojson|forceescape }}" data-sd-title="{{ row.group_name or '超时明细' }} · {{ row.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td></tr>
+                        {% else %}
+                        <tr><td colspan="6" class="cl-muted">当前条件下没有被剔除的消息</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -174,7 +191,7 @@
       if (f && window.matchMedia('(max-width: 768px)').matches) f.removeAttribute('open');
     })();
     </script>
-    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=1"></script>
+    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=2"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

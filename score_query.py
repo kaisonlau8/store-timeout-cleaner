@@ -281,7 +281,7 @@ def _classified_events(
         start_sql = start.isoformat() + " 00:00:00"
         db_rows = conn.execute(
             """
-            SELECT msg_id, rule_id, rule_name, room_id, room_name, store, theater, created_at
+            SELECT msg_id, rule_id, rule_name, room_id, room_name, store, theater, created_at, content
             FROM timeout_event
             WHERE created_at >= ? AND created_at < ?
             ORDER BY created_at, room_name, msg_id, rule_id
@@ -291,12 +291,12 @@ def _classified_events(
     finally:
         conn.close()
 
-    messages = _message_index(root)
+    messages: dict[str, str] = {}  # 正文来自会话存档（timeout_event.content）；Excel 导入已停用
     pending: list[dict[str, Any]] = []
     missing = 0
     unmatched = 0
     for row in db_rows:
-        msg = messages.get(row["msg_id"])
+        msg = row["content"] if row["content"] else messages.get(row["msg_id"])
         if msg is None:
             missing += 1
         if not (row["store"] or "").strip():

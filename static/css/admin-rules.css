@@ -1,0 +1,31 @@
+.rules-actions{display:flex;gap:8px;flex-wrap:wrap}
+.rules-actions .ant-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px}
+.job-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:8px;font-size:14px}
+.rules-table td,.rules-table th{vertical-align:middle}
+.rules-table .ops{display:flex;gap:8px;flex-wrap:wrap}
+.rules-table .hist{font-size:12px;color:rgba(0,0,0,.45);margin-top:4px;line-height:1.6}
+.rule-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1300}
+.rule-modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);z-index:1301}
+.rule-modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 24px 8px}
+.rule-modal-head h3{margin:0;font-size:16px;font-weight:600}
+.rule-x{border:0;background:none;font-size:20px;line-height:1;width:32px;height:32px;cursor:pointer;color:rgba(0,0,0,.45);border-radius:6px}
+.rule-x:hover{background:rgba(0,0,0,.06)}
+.rule-form{display:flex;flex-direction:column;gap:12px;padding:8px 24px 20px}
+.rule-form label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:rgba(0,0,0,.88)}
+.rule-form input[type=text],.rule-form input:not([type]),.rule-form input[type=number],.rule-form input[type=time],.rule-form input[type=date]{height:32px;padding:4px 11px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box;width:100%}
+.rule-form input:focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 2px rgba(5,145,255,.1)}
+.rule-form fieldset{border:0;margin:0;padding:0}
+.rule-form legend{font-size:14px;margin-bottom:4px;padding:0}
+.day-pills{display:flex;flex-wrap:wrap;gap:6px}
+.day-pill{flex-direction:row!important;cursor:pointer}
+.day-pill input{position:absolute;opacity:0;pointer-events:none}
+.day-pill span{display:inline-flex;align-items:center;justify-content:center;min-width:48px;height:32px;padding:0 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;box-sizing:border-box}
+.day-pill input:checked+span{border-color:#1677ff;color:#1677ff;background:#e6f4ff}
+.day-pill input:focus-visible+span{box-shadow:0 0 0 2px rgba(5,145,255,.25)}
+.rule-row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rule-check{flex-direction:row!important;align-items:center;gap:8px!important}
+.rule-tip{margin:0;font-size:12px;line-height:1.6}
+.rule-modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.rule-modal-foot .ant-btn{height:32px;min-width:72px;display:inline-flex;align-items:center;justify-content:center}
+@media (max-width:480px){.rule-row2{grid-template-columns:1fr}.rule-form{padding:8px 16px 16px}.rule-modal-head{padding:14px 16px 6px}}
+.rule-form input:not([type=checkbox]){height:36px!important;min-height:36px;line-height:1.5}
