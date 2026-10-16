@@ -308,6 +308,13 @@ def apply_filters(root: str, start: date, end: date, *, llm: bool = True) -> dic
         except Exception:
             log.warning("DeepSeek 复核失败，未复核的消息仍计入", exc_info=True)
     events, _u, _m, _meta = prepare_events(root, start, end)
+    # 同一消息命中多条规则：第二条记「重复触发」。若首条被剔除，重复的那条跟着用首条原因，
+    # 这样「重复触发」只表示「消息已计入、只是规则多算一次」。
+    primary = {ev["msg_id"]: ev.get("reason") or "" for ev in events
+               if (ev.get("reason") or "") != "重复触发(同一消息)"}
+    for ev in events:
+        if ev.get("reason") == "重复触发(同一消息)" and primary.get(ev["msg_id"]):
+            ev["reason"] = primary[ev["msg_id"]]
     conn = open_db(root)
     try:
         conn.executemany(
@@ -317,10 +324,13 @@ def apply_filters(root: str, start: date, end: date, *, llm: bool = True) -> dic
         conn.commit()
     finally:
         conn.close()
-    stats = {"total": len(events), "valid": 0, "rule_excluded": 0, "llm_excluded": 0}
+    stats = {"total": len(events), "valid": 0, "rule_excluded": 0, "llm_excluded": 0, "duplicate": 0}
     for ev in events:
         r = ev.get("reason") or ""
-        if not r:
+        if r == "重复触发(同一消息)":
+            stats["duplicate"] = stats.get("duplicate", 0) + 1
+            stats["total"] -= 1
+        elif not r:
             stats["valid"] += 1
         elif r.startswith("LLM"):
             stats["llm_excluded"] += 1
