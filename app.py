@@ -10,7 +10,8 @@ from datetime import date, datetime
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from flask import Flask, Response, abort, jsonify, redirect, render_template, request
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request
+from date_ranges import install_date_ranges
 
 from coverage_query import (
     allowed_store_names,
@@ -55,6 +56,7 @@ app.jinja_env.globals["coverage_store_href"] = coverage_store_href
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_CLEANER]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
 _mhero_auth_init(app, "cleaner", default_mode="off", public_get_paths=["/static/brand/*"], admin_paths=["/admin/*", "/api/admin/*"])
+install_date_ranges(app)
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 # 开发环境可用 CLEANER_DB_PATH / CLEANER_DATA_FILE 指向真实数据副本；默认不变
 DATA_FILE = os.environ.get("CLEANER_DATA_FILE") or os.path.join(ROOT, "data.json")
@@ -345,6 +347,7 @@ def store_page(store_key):
     theater = (request.args.get("theater") or "").strip()
     q = (request.args.get("q") or "").strip()
     filters = {key: (request.args.get(key) or "").strip() for key in ("group_from", "group_to", "date_from", "date_to")}
+    filters['date_from'], filters['date_to'] = (d.isoformat() for d in g.date_range)
     for key, value in filters.items():
         if value:
             try:
@@ -396,7 +399,7 @@ def _export_allowed(data):
 @app.route("/timeout")
 def timeout_page():
     data = load_data()
-    return render_template("timeout.html", has_data=data is not None, data=data)
+    return render_template("timeout.html", has_data=data is not None, data=data, start=g.date_range[0].isoformat(), end=g.date_range[1].isoformat())
 
 
 @app.route("/parse")
@@ -486,8 +489,8 @@ def timeout_chart_api():
         scope=request.args.get("scope") or "national",
         ident=request.args.get("id") or "",
         grain=request.args.get("grain") or "month",
-        start=request.args.get("start"),
-        end=request.args.get("end"),
+        start=g.date_range[0].isoformat(),
+        end=g.date_range[1].isoformat(),
         theater=request.args.get("theater") or "",
         q=request.args.get("q") or "",
     )
@@ -516,8 +519,8 @@ def timeout_events_api():
             store=(request.args.get("store") or "").strip(),
             rule_id=(request.args.get("rule_id") or "").strip(),
             room_id=(request.args.get("room_id") or "").strip(),
-            start=(request.args.get("start") or "").strip(),
-            end=(request.args.get("end") or "").strip(),
+            start=g.date_range[0].isoformat(),
+            end=g.date_range[1].isoformat(),
             limit=limit, offset=offset,
             status=(request.args.get("status") or "valid").strip(),
         )
@@ -639,8 +642,8 @@ def timeout_export_csv():
         scope=request.args.get("scope") or "national",
         ident=request.args.get("id") or "",
         grain=request.args.get("grain") or "month",
-        start=request.args.get("start"),
-        end=request.args.get("end"),
+        start=g.date_range[0].isoformat(),
+        end=g.date_range[1].isoformat(),
         theater=request.args.get("theater") or "",
         q=request.args.get("q") or "",
     )

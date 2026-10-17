@@ -1,12 +1,10 @@
 import os
 import tempfile
 import unittest
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from flask import Flask
 
-from score_query import last_quarter
+from date_ranges import parse_range
 from score_web import _view_report, register_score
 from tests.test_score_query import _seed
 
@@ -34,13 +32,17 @@ class ScorePageTests(unittest.TestCase):
             del os.environ["DEEPSEEK_API_KEY"]
         self.tmp.cleanup()
 
-    def test_default_range_is_last_quarter(self):
+    def test_default_range_is_current_month(self):
         page = self.client.get("/score")
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
-        start, end = last_quarter(datetime.now(ZoneInfo("Asia/Shanghai")).date())
+        start, end = parse_range()
         self.assertIn(start.isoformat(), html)
         self.assertIn(end.isoformat(), html)
+        detail = self.client.get('/score/store?name=甲店')
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn('value="'+str(start)+'"', detail.text)
+        self.assertIn('value="'+str(end)+'"', detail.text)
 
     def test_list_export_and_detail(self):
         page = self.client.get("/score?start=2026-07-01&end=2026-09-30")

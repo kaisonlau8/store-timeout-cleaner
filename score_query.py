@@ -17,6 +17,7 @@ from score_math import MERGE_MAP, StoreInput, score_stores
 from score_rules import classify_events
 from timeout_excel import _cell, _msg_id, _parse_trigger_time
 from timeout_store import connect
+from date_ranges import parse_range
 
 log = logging.getLogger(__name__)
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -37,29 +38,6 @@ def last_quarter(today: date) -> tuple[date, date]:
     else:
         end = date(year, end_month + 1, 1) - timedelta(days=1)
     return start, end
-
-
-def parse_range(
-    start: str | None,
-    end: str | None,
-    today: date | None = None,
-) -> tuple[date, date]:
-    today = today or datetime.now(SHANGHAI).date()
-    default_start, default_end = last_quarter(today)
-
-    def one(value: str | None, fallback: date) -> date:
-        if not value:
-            return fallback
-        try:
-            return date.fromisoformat(str(value)[:10])
-        except ValueError:
-            return fallback
-
-    start_d = one(start, default_start)
-    end_d = one(end, default_end)
-    if end_d < start_d:
-        start_d, end_d = end_d, start_d
-    return start_d, end_d
 
 
 def build_report(root: str, start: date, end: date, *, use_llm: bool | None = None) -> dict[str, Any]:

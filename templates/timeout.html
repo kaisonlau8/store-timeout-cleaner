@@ -10,6 +10,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
+    {% include '_range_assets.html' %}
+    {% from '_range_picker.html' import picker with context %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=3">
@@ -54,14 +56,7 @@
                     <label class="toggle-btn"><input type="radio" name="grain" value="quarter"> 季</label>
                 </div>
             </div>
-            <div class="selector-group">
-                <label>开始</label>
-                <input type="date" id="start-date" value="2026-05-01">
-            </div>
-            <div class="selector-group">
-                <label>结束</label>
-                <input type="date" id="end-date">
-            </div>
+            {{ picker(start, end) }}
             <button class="filter-btn" id="filter-btn" type="button" data-loading-text="查询中"><span data-btn-label>查询</span></button>
         </div>
 
@@ -83,7 +78,7 @@
                 <a class="export-link" id="export-link" data-antd-export data-loading-text="导出中" href="/api/timeout/export"><span data-btn-label>导出 CSV</span></a>
             </div>
             <div class="store-table-wrapper timeout-table-wrap">
-                <table class="store-table" id="store-table">
+                <table class="store-table" id="store-table" data-ds-primary>
                     <thead></thead>
                     <tbody></tbody>
                 </table>
@@ -92,8 +87,7 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=8"></script>
+    <script src="{{ url_for('static', filename='js/timeout.js') }}?v=9"></script>
     <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>

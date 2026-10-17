@@ -99,7 +99,11 @@ def execute_review(
     from score_query import load_rule_events
 
     events, _unmatched, _missing = load_rule_events(root, start, end)
-    pending = _dedupe(_pending_texts(events))
+    # KPI-only classification can retain a different message after burst merging.
+    # Review the union so neither consumer waits forever for an unreachable text.
+    from score_query import prepare_events
+    kpi_events, _, _, _ = prepare_events(root, start, end, use_llm=False)
+    pending = _dedupe(_pending_texts(events) + _pending_texts(kpi_events))
     cached = cache_get(root, pending)
     todo = pending if force else [text for text in pending if text not in cached]
     _write_job(root, start, end, status="running", total=len(todo), done=0, failed=0, note="")
@@ -213,7 +217,9 @@ def maybe_autostart_review(
         if source == "import":
             return start_review_job(root, start, end, follow_up=True)
         return status
-    if source == "page" and _failed_recently(status):
+    # A GET may start a new range once, but must never reschedule a terminal job.
+    # Imports / explicit review requests own retries and newly arrived data.
+    if source == "page" and status.get("status") in {"done", "error", "off"}:
         return status
     return start_review_job(root, start, end, force=False)
 

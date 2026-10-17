@@ -10,6 +10,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
+    {% include '_range_assets.html' %}
+    {% from '_range_picker.html' import picker with context %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <style>
         .msg-cell { max-width: 420px; white-space: pre-wrap; word-break: break-word; }
@@ -38,11 +40,16 @@
             </div>
         </header>
 
+        <form class="month-selector timeout-filters list-filters" method="get" action="/score/store">
+            {% for key, value in request.args.items() %}{% if key not in ['start', 'end'] %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endif %}{% endfor %}
+            {{ picker(start, end) }}
+            <button type="submit" class="filter-btn">查询</button>
+        </form>
         {% if detail and detail.store %}
         {% if not detail.llm_available %}
         <p class="score-note" id="llm-status" data-auto="0">LLM复核关闭</p>
         {% elif detail.llm_cached < detail.llm_pending %}
-        <p class="score-note" id="llm-status" data-auto="1" data-start="{{ start }}" data-end="{{ end }}" data-state="{{ detail.llm_job.status }}" data-since="{{ detail.llm_job.updated_at }}" data-reload="/score/store?name={{ detail.name|urlencode }}&amp;start={{ start }}&amp;end={{ end }}">LLM复核已自动计入。未缓存消息由后台补齐，完成后自动更新得分。</p>
+        <p class="score-note" id="llm-status" data-auto="{{ '1' if detail.llm_job.status == 'running' else '0' }}" data-start="{{ start }}" data-end="{{ end }}" data-state="{{ detail.llm_job.status }}" data-since="{{ detail.llm_job.updated_at }}">LLM复核已自动计入。{% if detail.llm_job.status == 'running' %}未缓存消息由后台补齐，完成后自动更新得分。{% else %}本次复核已结束，未缓存消息仍按规则计入，后续由同步补齐。{% endif %}</p>
         {% else %}
         <p class="score-note" id="llm-status" data-auto="0">LLM复核已自动计入</p>
         {% endif %}
@@ -114,6 +121,6 @@
         {% endif %}
     </div>
     <script>{{ ds_cards()|safe }}</script>
-    <script src="{{ url_for('static', filename='js/score.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='js/score.js') }}?v=4"></script>
 </body>
 </html>

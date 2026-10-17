@@ -339,6 +339,42 @@ class CacheAndScoreTests(unittest.TestCase):
         execute_review(self.root, date(2026, 7, 1), date(2026, 9, 30), force=True, **kwargs)
         self.assertEqual(calls["n"], 2)
 
+    def test_kpi_burst_pending_union_prevents_completed_cache_gap(self):
+        import timeout_algo
+        from score_query import prepare_events
+        conn = timeout_algo.open_db(self.root)
+        conn.execute("INSERT INTO calc_rule(rule_key,name,minutes,days,start_time,end_time,effective_from,enabled,counts_for_kpi) SELECT 'nonkpi','仅展示',10,days,start_time,end_time,effective_from,1,0 FROM calc_rule LIMIT 1")
+        conn.execute("INSERT INTO timeout_event(msg_id,rule_id,room_id,room_name,store,created_at,content,source) VALUES ('early','nonkpi','name:甲店客户群1','甲店客户群1','甲店','2026-08-01 08:50:00','请检查轮胎','api')")
+        conn.commit()
+        conn.close()
+        os.environ['DEEPSEEK_API_KEY'] = 'k'
+        a,b = date(2026,7,1),date(2026,9,30)
+        def post(url, **kw):
+            return _ok(_items_for(kw['json']['messages'][1]['content']))
+        execute_review(self.root,a,b,key='k',post=post,sleep=lambda _:None)
+        _,_,_,meta = prepare_events(self.root,a,b)
+        self.assertEqual(meta['llm_cached'],meta['llm_pending'])
+        self.assertEqual(meta['llm_job']['status'],'done')
+        with mock.patch('score_llm.start_review_job') as job:
+            client = self._score_client()
+            for _ in range(3):
+                self.assertEqual(client.get('/score?start=2026-07-01&end=2026-09-30&q=甲').status_code,200)
+            job.assert_not_called()
+
+    def test_terminal_gap_get_does_not_reschedule_and_timestamp_matches_api(self):
+        from score_llm import _write_job
+        os.environ['DEEPSEEK_API_KEY'] = 'k'
+        a,b = date(2026,7,1),date(2026,9,30)
+        client = self._score_client()
+        for state in ('running','done','error'):
+            _write_job(self.root,a,b,status=state,total=3,done=0,failed=0,note='fixture')
+            with mock.patch('score_llm.start_review_job') as job:
+                for _ in range(3):
+                    response = client.get('/score?start=2026-07-01&end=2026-09-30')
+                    stamp = client.get('/api/score/llm-status?start=2026-07-01&end=2026-09-30').json['updated_at']
+                    self.assertIn('data-since="'+stamp+'"',response.text)
+                job.assert_not_called()
+
     def test_opening_score_starts_incremental_review_for_uncached_texts(self):
         os.environ["DEEPSEEK_API_KEY"] = "k"
         client = self._score_client()

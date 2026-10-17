@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+    {% include '_range_assets.html' %}
+    {% from '_range_picker.html' import picker with context %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>门店拉群明细{% if name %} · {{ name }}{% endif %}</title>
@@ -100,12 +102,8 @@
                 <label for="store-q">搜索群与超时记录</label>
                 <input type="search" id="store-q" name="q" value="{{ q }}" placeholder="群名、群 ID；超时支持消息内容、规则名、剔除原因">
             </div>
-            {% for key, label in [('group_from', '群创建日期起'), ('group_to', '群创建日期止'), ('date_from', '超时时间起'), ('date_to', '超时时间止')] %}
-            <div class="selector-group">
-                <label for="{{ key }}">{{ label }}</label>
-                <input type="date" id="{{ key }}" name="{{ key }}" value="{{ filters[key] }}">
-            </div>
-            {% endfor %}
+            {{ picker(filters.group_from, filters.group_to, 'group_from', 'group_to', 'group_from', 'group_to', '群创建日期', true) }}
+            {{ picker(filters.date_from, filters.date_to, 'date_from', 'date_to', 'date_from', 'date_to', '超时日期范围') }}
             <button type="submit" class="filter-btn">筛选</button>
             <a href="{{ reset_href }}">重置</a>
         </form>

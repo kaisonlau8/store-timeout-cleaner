@@ -14,6 +14,8 @@ class FeedbackSurfaceTests(unittest.TestCase):
     def test_pages_include_feedback_assets(self):
         for name in ("templates/index.html", "templates/timeout.html"):
             html = read(name)
+            if "_range_assets.html" in html:
+                html += read("templates/_range_assets.html")
             self.assertIn("css/antd-feedback.css", html)
             self.assertIn("js/antd-feedback.js", html)
 

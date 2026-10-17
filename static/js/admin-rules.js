@@ -8,17 +8,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let rules = [];
     let editing = null;
     let polling = null;
+    let pollAttempts = 0, pollErrors = 0, pollStopped = false;
+    window.addEventListener('pagehide', () => { pollStopped = true; clearTimeout(polling); });
 
-    const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+    const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const days = (list) => (list.length === 7 ? '每天' : list.map((d) => '周' + DAY[d]).join('、'));
 
     async function api(url, body) {
-        const res = await fetch(url, body === undefined ? { credentials: 'same-origin' } : {
+        const res = await fetch(url, body === undefined ? { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000) } : {
             method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         });
         let j = {};
         try { j = await res.json(); } catch (e) { j = {}; }
-        if (!res.ok) throw new Error(j.error || ('请求失败 ' + res.status));
+        if (!res.ok) { const error = new Error(j.error || ('请求失败 ' + res.status)); error.status = res.status; throw error; }
         return j;
     }
 
@@ -65,23 +67,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const bar = $('job-bar');
         bar.classList.remove('ant-progress-status-active', 'ant-progress-status-success', 'ant-progress-status-exception');
         bar.classList.add(job.status === 'error' ? 'ant-progress-status-exception' : job.status === 'done' ? 'ant-progress-status-success' : 'ant-progress-status-active');
-        if (job.status === 'running' && !polling) poll();
+        if (job.status === 'running' && !polling && !pollStopped) poll();
     }
 
     function poll() {
-        polling = setInterval(async () => {
+        polling = setTimeout(async () => {
+            if (pollStopped) return;
+            pollAttempts += 1;
             try {
                 const job = await api('/api/admin/job');
+                pollErrors = 0;
                 showJob(job);
                 if (job.status !== 'running') {
-                    clearInterval(polling); polling = null;
+                    clearTimeout(polling); polling = null;
                     if (job.status === 'done') {
                         const r = job.result || {};
                         FB.notification('success', '重算完成', r.start + ' ~ ' + r.end + '：计入 ' + r.valid + '，规则剔除 ' + r.rule_excluded + '，DeepSeek 剔除 ' + r.llm_excluded);
                     } else FB.notification('error', '重算失败', job.error || '');
                     load();
+                    return;
                 }
-            } catch (e) { /* 继续轮询 */ }
+            } catch (e) {
+                pollErrors += 1;
+                if (e.status === 401 || e.status === 403) pollStopped = true;
+            }
+            polling = null;
+            if (pollStopped || pollErrors >= 3 || pollAttempts >= 120) {
+                pollStopped = true;
+                FB.message('warning', '进度查询已暂停，请稍后手动刷新');
+                return;
+            }
+            poll();
         }, 1500);
     }
 

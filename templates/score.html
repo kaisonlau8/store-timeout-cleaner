@@ -10,6 +10,8 @@
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
+    {% include '_range_assets.html' %}
+    {% from '_range_picker.html' import picker with context %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
     <style>
         .score-pill { display: inline-block; min-width: 3em; padding: 0 8px; border-radius: 4px; font-weight: 600; text-align: center; }
@@ -35,7 +37,7 @@
         <header class="ant-page-header" data-ds-back="/">
             <div class="ant-page-header-heading">
                 <h1>门店超时评分</h1>
-                <div class="ant-page-header-sub">按选定日期重算收缩率。默认上一自然季度。</div>
+                <div class="ant-page-header-sub">按选定日期重算收缩率。默认本月 1 日至今天（北京时间）。</div>
             </div>
             <div class="ant-page-header-actions score-actions">
                 <a class="export-link" href="/api/score/export.csv?start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-download"/></svg>导出 CSV</a>
@@ -49,14 +51,7 @@
             <input type="hidden" name="{{ key }}" value="{{ value }}">
             {% endif %}
             {% endfor %}
-            <div class="selector-group">
-                <label for="start-date">开始</label>
-                <input type="date" id="start-date" name="start" value="{{ report.start }}">
-            </div>
-            <div class="selector-group">
-                <label for="end-date">结束</label>
-                <input type="date" id="end-date" name="end" value="{{ report.end }}">
-            </div>
+            {{ picker(report.start, report.end) }}
             <div class="selector-group">
                 <label for="theater-select">战区</label>
                 <select id="theater-select" name="theater">
@@ -76,7 +71,7 @@
         {% if not report.llm_available %}
         <p class="score-note" id="llm-status" data-auto="0">LLM复核关闭</p>
         {% elif report.llm_cached < report.llm_pending %}
-        <p class="score-note" id="llm-status" data-auto="1" data-start="{{ report.start }}" data-end="{{ report.end }}" data-state="{{ report.llm_job.status }}" data-since="{{ report.llm_job.updated_at }}">LLM复核已自动计入。未缓存消息由后台补齐，完成后自动更新得分。</p>
+        <p class="score-note" id="llm-status" data-auto="{{ '1' if report.llm_job.status == 'running' else '0' }}" data-start="{{ report.start }}" data-end="{{ report.end }}" data-state="{{ report.llm_job.status }}" data-since="{{ report.llm_job.updated_at }}">LLM复核已自动计入。{% if report.llm_job.status == 'running' %}未缓存消息由后台补齐，完成后自动更新得分。{% else %}本次复核已结束，未缓存消息仍按规则计入，后续由同步补齐。{% endif %}</p>
         {% else %}
         <p class="score-note" id="llm-status" data-auto="0" data-start="{{ report.start }}" data-end="{{ report.end }}">LLM复核已自动计入</p>
         {% endif %}
@@ -137,6 +132,6 @@
         </div>
     </div>
     <script>{{ ds_cards()|safe }}</script>
-    <script src="{{ url_for('static', filename='js/score.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='js/score.js') }}?v=4"></script>
 </body>
 </html>
