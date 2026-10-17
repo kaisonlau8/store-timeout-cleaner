@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         tbody.innerHTML = rows.map((row) =>
-            '<tr class="theater-row" data-theater="' + escapeHtml(row.theater) + '" title="点击按该战区筛选">' +
+            '<tr class="theater-row" role="button" tabindex="0" data-theater="' + escapeHtml(row.theater) + '" title="点击或按 Enter 按该战区筛选">' +
             '<td data-label="战区" data-card-title>' + escapeHtml(row.theater) + '</td>' +
             '<td data-label="群数">' + row.group_count + '</td>' +
             '<td data-label="门店数">' + row.store_count + '</td></tr>'
@@ -209,6 +209,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('#theater-table tbody').addEventListener('click', (ev) => {
         const tr = ev.target.closest('tr.theater-row');
         if (tr) filterByTheater(tr.dataset.theater);
+    });
+    document.querySelector('#theater-table tbody').addEventListener('keydown', (ev) => {
+        const tr = ev.target.closest('tr.theater-row');
+        if (tr && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); tr.click(); }
     });
     document.querySelector('#store-table tbody').addEventListener('click', (ev) => {
         const btn = ev.target.closest('button.theater-chip');

@@ -15,7 +15,7 @@ window.stcKpiTag = function (name) {
         mask = document.createElement('div'); mask.className = 'sd-mask'; mask.hidden = true;
         drawer = document.createElement('aside'); drawer.className = 'sd-drawer'; drawer.hidden = true;
         drawer.setAttribute('role', 'dialog'); drawer.setAttribute('aria-modal', 'true');
-        drawer.innerHTML = '<div class="sd-head"><button type="button" class="sd-back" aria-label="返回" hidden>‹</button><h3></h3><button type="button" class="sd-x" aria-label="关闭">×</button></div><div class="sd-body"></div>';
+        drawer.innerHTML = '<div class="sd-head"><button type="button" class="sd-back" aria-label="返回" hidden><svg class="ai" aria-hidden="true"><use href="#i-arrow-left"/></svg></button><h3></h3><button type="button" class="sd-x ds-close" aria-label="关闭"><svg class="ai" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="sd-body"></div>';
         document.body.appendChild(mask); document.body.appendChild(drawer);
         titleEl = drawer.querySelector('h3'); bodyEl = drawer.querySelector('.sd-body'); backBtn = drawer.querySelector('.sd-back');
         mask.addEventListener('click', close);

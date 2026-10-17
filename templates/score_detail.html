@@ -25,7 +25,7 @@
         <span class="cl-meta">{{ start }} ~ {{ end }}</span>
     </div></header>
     <div class="container">
-        <header class="ant-page-header">
+        <header class="ant-page-header" data-ds-back="/score">
             <div class="ant-page-header-heading">
                 <h1>{{ detail.name if detail else '超时明细' }}</h1>
                 <div class="ant-page-header-sub">
@@ -56,7 +56,7 @@
         {% else %}
         {% if detail.store.remark %}<p class="score-note">{{ detail.store.remark }}</p>{% endif %}
 
-        <div class="month-selector timeout-filters list-filters">
+        <div class="month-selector timeout-filters list-filters" data-ds-filter-live>
             <div class="selector-group">
                 <label for="detail-q">搜索</label>
                 <input id="detail-q" type="search" placeholder="会话、规则或消息" autocomplete="off" value="{{ request.args.get('dq') or '' }}">
@@ -65,7 +65,7 @@
 
         <div class="stat-block store-block">
             <div class="table-head"><h3>计入的超时</h3></div>
-            <div class="store-table-wrapper">
+            <div class="store-table-wrapper ds-collapse" data-ds-title="计入的超时">
                 <table class="store-table">
                     <thead>
                         <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>来源</th><th>超时消息</th></tr>
@@ -89,7 +89,7 @@
 
         <div class="stat-block store-block">
             <div class="table-head"><h3>剔除的超时</h3></div>
-            <div class="store-table-wrapper">
+            <div class="store-table-wrapper ds-collapse" data-ds-title="剔除的超时">
                 <table class="store-table">
                     <thead>
                         <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>剔除原因</th><th>来源</th><th>超时消息</th></tr>
