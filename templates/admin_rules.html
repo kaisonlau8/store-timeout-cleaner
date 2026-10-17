@@ -20,7 +20,7 @@
         <span class="cl-meta">管理员</span>
     </div></header>
     <div class="container">
-        <header class="ant-page-header">
+        <header class="ant-page-header" data-ds-back="/timeout">
             <div class="ant-page-header-heading">
                 <h1>超时计算规则</h1>
                 <div class="ant-page-header-sub">本地计算口径，不写回 SCRM，不影响管家真实的超时提醒。改规则后按生效日起自动重算。</div>
@@ -44,7 +44,7 @@
             <div class="store-table-wrapper">
                 <table class="store-table rules-table" id="rules-table">
                     <thead><tr><th data-card-title>规则名称</th><th>超时</th><th>生效星期</th><th>时段</th><th>生效日期</th><th>状态</th><th>KPI</th><th>操作</th></tr></thead>
-                    <tbody><tr><td colspan="7" class="cl-muted" style="text-align:center">加载中</td></tr></tbody>
+                    <tbody><tr><td colspan="8" class="cl-muted" style="text-align:center">加载中</td></tr></tbody>
                 </table>
             </div>
             <p class="chart-hint">客户在规则时段内发言，且截止时刻（也须在时段内）之前同群没有企业成员回复，即记一次超时。同一条消息命中多条规则只算一条消息。每条超时再经过规则过滤（重复、话术、寒暄/表情、仅@、30 分钟连发）和 DeepSeek 复核，剔除的不计入评分。</p>
@@ -58,7 +58,7 @@
 
     <div class="rule-mask" id="rule-mask" hidden></div>
     <div class="rule-modal" id="rule-modal" role="dialog" aria-modal="true" aria-labelledby="rule-title" hidden>
-        <div class="rule-modal-head"><h3 id="rule-title">新建规则</h3><button type="button" class="rule-x" id="rule-x" aria-label="关闭">×</button></div>
+        <div class="rule-modal-head"><h3 id="rule-title">新建规则</h3><button type="button" class="rule-x ds-close" id="rule-x" aria-label="关闭"><svg class="ai" aria-hidden="true"><use href="#i-close"/></svg></button></div>
         <form id="rule-form" class="rule-form" novalidate>
             <label>规则名称<input name="name" maxlength="60" required placeholder="如 30 分钟未回复预警"></label>
             <label>超时分钟<input name="minutes" type="number" min="1" max="240" required></label>
