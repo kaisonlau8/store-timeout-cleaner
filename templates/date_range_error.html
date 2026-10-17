@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>日期范围错误</title><style>{{ ds_css()|safe }}</style></head>
-<body>{{ ds_sprite()|safe }}<main class="container" style="max-width:720px;margin:48px auto;padding:16px">
-<header class="ant-page-header"><a class="ds-back" href="{{ request.path }}{% if request.path == '/score/store' %}?name={{ request.args.get('name','')|urlencode }}{% endif %}"><svg class="ai" aria-hidden="true"><use href="#i-arrow-left"/></svg>返回默认日期</a><h1>日期范围错误</h1></header>
+<body>{{ ds_sprite()|safe }}<main class="container" data-ds-back="{{ request.path }}{% if request.path == '/score/store' %}?name={{ request.args.get('name','')|urlencode }}{% endif %}" data-ds-back-label="默认日期" style="max-width:720px;margin:48px auto;padding:16px">
+<header class="ant-page-header"><h1>日期范围错误</h1></header>
 <div class="ant-alert ant-alert-error" role="alert">{{ error }}。请修改链接中的日期，或返回本月范围。</div>
 </main></body></html>

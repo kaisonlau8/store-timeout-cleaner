@@ -114,9 +114,15 @@ document.addEventListener('DOMContentLoaded', () => {
         $('rule-tip').hidden = !editing;
         $('rule-error').hidden = true;
         $('rule-mask').hidden = false; $('rule-modal').hidden = false;
+        requestAnimationFrame(() => { $('rule-mask').classList.add('on'); $('rule-modal').classList.add('on'); });
         form.name.focus();
     }
-    function closeModal() { $('rule-mask').hidden = true; $('rule-modal').hidden = true; }
+    function closeModal() {
+        const mask = $('rule-mask'), modal = $('rule-modal');
+        mask.classList.remove('on'); modal.classList.remove('on');
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) { mask.hidden = true; modal.hidden = true; return; }
+        setTimeout(() => { mask.hidden = true; modal.hidden = true; }, 200);
+    }
     async function submit(body, key) {
         const res = await api('/api/admin/rules' + (key ? '/' + encodeURIComponent(key) : ''), body);
         FB.message('success', res.started ? '已保存，正在从 ' + res.recompute_from + ' 起重算' : '已保存；已有重算在进行，完成后请再点「全部重算」');
