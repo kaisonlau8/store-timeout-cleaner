@@ -50,6 +50,10 @@ def store_client(tmp_path, monkeypatch):
 
 
 def body(client, **query):
+    # Historical content tests request their fixture's explicit range. Defaults
+    # are covered separately and now intentionally show only the current month.
+    query.setdefault('date_from', '2026-07-01')
+    query.setdefault('date_to', '2026-08-01')
     response = client.get(coverage_store_href(STORE), query_string=query)
     assert response.status_code == 200
     return response.get_data(as_text=True)

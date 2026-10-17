@@ -1,0 +1,9 @@
+{% macro picker(start, end, start_name='start', end_name='end', start_id='start-date', end_id='end-date', label='日期范围', optional=false) %}
+<div class="selector-group stc-range" data-range-picker data-today="{{ range_today }}" data-optional="{{ '1' if optional else '0' }}">
+    <label id="{{ start_id }}-label">{{ label }}</label>
+    <input type="hidden" id="{{ start_id }}" name="{{ start_name }}" value="{{ start }}" data-range-start>
+    <input type="hidden" id="{{ end_id }}" name="{{ end_name }}" value="{{ end }}" data-range-end>
+    <button type="button" class="ant-picker ant-picker-range select-trigger" aria-labelledby="{{ start_id }}-label {{ start_id }}-text" aria-haspopup="dialog" aria-expanded="false"><span id="{{ start_id }}-text" data-range-text>{{ start or '开始日期' }} → {{ end or '结束日期' }}</span><svg class="ai" aria-hidden="true"><use href="#i-down"/></svg></button>
+    <div class="ant-form-item-explain-error" role="alert" hidden></div>
+</div>
+{% endmacro %}

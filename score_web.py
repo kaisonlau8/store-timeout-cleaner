@@ -10,6 +10,7 @@ from list_filters import row_visible
 from score_export import stores_to_csv, stores_to_xlsx
 from score_llm import llm_configured, maybe_autostart_review, review_status, start_review_job
 from score_query import build_report, parse_range, store_detail
+from date_ranges import install_date_ranges
 
 
 def _view_report(report: dict, theater: str | None, query: str | None) -> dict:
@@ -61,6 +62,7 @@ def _with_auto_review(root: str, start, end, build):
 
 
 def register_score(app: Flask, root: str) -> None:
+    install_date_ranges(app)
     @app.route("/score")
     def score_page():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))

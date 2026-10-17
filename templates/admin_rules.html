@@ -42,7 +42,7 @@
         <div class="stat-block">
             <div class="table-head"><h3>规则列表</h3><span class="cl-muted" id="archive-info"></span></div>
             <div class="store-table-wrapper">
-                <table class="store-table rules-table" id="rules-table">
+                <table class="store-table rules-table" id="rules-table" data-ds-primary>
                     <thead><tr><th data-card-title>规则名称</th><th>超时</th><th>生效星期</th><th>时段</th><th>生效日期</th><th>状态</th><th>KPI</th><th>操作</th></tr></thead>
                     <tbody><tr><td colspan="8" class="cl-muted" style="text-align:center">加载中</td></tr></tbody>
                 </table>
@@ -82,7 +82,7 @@
         </form>
     </div>
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=4"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

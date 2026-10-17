@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from timeout_store import connect, get_meta, list_imports
+from date_ranges import parse_range
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -192,11 +193,7 @@ def query_chart(
     if scope not in {"national", "theater", "store"}:
         scope = "national"
 
-    today = datetime.now(SHANGHAI).date()
-    start_d = _parse_date(start, date(2026, 5, 1))
-    end_d = _parse_date(end, today)
-    if end_d < start_d:
-        start_d, end_d = end_d, start_d
+    start_d, end_d = parse_range(start, end)
     start_sql = start_d.isoformat() + " 00:00:00"
     end_sql = (end_d + timedelta(days=1)).isoformat() + " 00:00:00"
     labels = _iter_labels(start_d, end_d, grain)

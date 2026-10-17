@@ -278,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function queryChart(options) {
+        if (window.StcRangePicker && !window.StcRangePicker.validateAll()) return;
         const nested = options && options.nested;
         const q = currentQuery();
         writeUrl(q);
@@ -322,10 +323,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (urlState.q) storeInput.value = urlState.q;
         applyGrain(urlState.grain);
         if (urlState.start) startDate.value = urlState.start;
-        else if (meta.min_date) startDate.value = meta.min_date;
         if (urlState.end) endDate.value = urlState.end;
-        else if (meta.max_date) endDate.value = meta.max_date;
-        else endDate.value = localISODate();
+        if (window.StcRangePicker) window.StcRangePicker.sync();
         const el = document.getElementById('updated-at');
         el.textContent = meta.updated_at
             ? '最近计算：' + meta.updated_at + ' · 会话存档自动计算'
