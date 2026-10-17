@@ -35,9 +35,9 @@ window.stcKpiTag = function (name) {
     function close() {
         if (!drawer) return; stack = [];
         mask.classList.remove('on'); drawer.classList.remove('on'); document.body.classList.remove('sd-lock');
-        setTimeout(function () { mask.hidden = true; drawer.hidden = true; }, 220);
+        setTimeout(function () { mask.hidden = true; drawer.hidden = true; }, 250);
     }
-    function loading() { bodyEl.innerHTML = '<div class="sd-empty"><span class="sd-spin"></span>加载中</div>'; }
+    function loading() { bodyEl.innerHTML = '<div class="ds-skeleton-block" style="height:16px;margin:12px 0;width:60%"></div><div class="ds-skeleton-block" style="height:16px;margin:12px 0"></div><div class="ds-skeleton-block" style="height:16px;margin:12px 0;width:82%"></div>'; }
     function getJSON(url) {
         return fetch(url, { credentials: 'same-origin' }).then(function (r) {
             return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ('请求失败 ' + r.status)); return j; });

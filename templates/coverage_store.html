@@ -25,12 +25,11 @@
         <span class="cl-meta">门店群覆盖与超时明细</span>
     </div></header>
     <div class="container">
-        <header class="ant-page-header" data-ds-back="{{ back_href }}">
+        <header class="ant-page-header" data-ds-back="{{ back_href }}" data-ds-back-label="拉群覆盖">
             <div class="ant-page-header-heading">
                 <h1>{{ detail.store if detail else (name or '门店拉群明细') }}</h1>
                 <div class="ant-page-header-sub">
-                    <a href="{{ back_href }}">返回拉群覆盖</a>
-                    {% if detail %}
+{% if detail %}
                         · {{ detail.theater or '未归战区' }}
                         · 群总数 {{ detail.group_count }}
                         · 已拉机器人 {{ detail.robot_count }}

@@ -27,12 +27,11 @@
         <span class="cl-meta">{{ start }} ~ {{ end }}</span>
     </div></header>
     <div class="container">
-        <header class="ant-page-header" data-ds-back="/score">
+        <header class="ant-page-header" data-ds-back="/score" data-ds-back-label="超时评分">
             <div class="ant-page-header-heading">
                 <h1>{{ detail.name if detail else '超时明细' }}</h1>
                 <div class="ant-page-header-sub">
-                    <a href="/score?start={{ start }}&amp;end={{ end }}{% if request.args.get('theater') %}&amp;theater={{ request.args.get('theater')|urlencode }}{% endif %}{% if request.args.get('q') %}&amp;q={{ request.args.get('q')|urlencode }}{% endif %}">返回评分列表</a>
-                    {% if detail and detail.store %}
+{% if detail and detail.store %}
                         · {{ detail.store.tier or '—' }} · {{ '%.2f'|format(detail.store.score) }} 分
                         · 原始 {{ detail.store.raw }} / 有效 {{ detail.store.valid }}
                     {% endif %}

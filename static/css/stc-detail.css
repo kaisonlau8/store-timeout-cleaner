@@ -1,7 +1,7 @@
 /* 超时明细 / 群成员 / 会话上下文抽屉（antd Drawer 风格） */
-.sd-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1200;opacity:0;transition:opacity .2s}
+.sd-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1200;opacity:0;transition:opacity .2s ease}
 .sd-mask.on{opacity:1}
-.sd-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);background:#fff;z-index:1201;display:flex;flex-direction:column;box-shadow:-6px 0 16px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .25s}
+.sd-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);background:#fff;z-index:1201;display:flex;flex-direction:column;box-shadow:-6px 0 16px rgba(0,0,0,.08);transform:translateX(100%);transition:transform .25s cubic-bezier(.23,1,.32,1)}
 .sd-drawer.on{transform:none}
 .sd-drawer[hidden],.sd-mask[hidden],.sd-back[hidden]{display:none!important}
 .sd-head{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #f0f0f0;min-height:56px}
@@ -49,3 +49,5 @@ body.sd-lock{overflow:hidden}
 .cell-msg{max-width:320px;white-space:normal;word-break:break-word}
 #timeout-events .sd-btn,#timeout-excluded .sd-btn{white-space:nowrap}
 #timeout-events td:nth-child(2),#timeout-excluded td:nth-child(2){white-space:nowrap}
+
+@media (prefers-reduced-motion: reduce){.sd-mask,.sd-drawer{transition:none}}
