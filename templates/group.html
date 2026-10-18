@@ -43,7 +43,7 @@
                 <div class="ant-page-header-sub">
 {% if info %}
                     {% if info.store %}<a class="store-link" href="{{ back_href }}">{{ info.store }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}未归店{% endif %}
-                    · {{ info.theater or '未归战区' }}
+                    · {% if info.theater %}<a class="store-link" href="{{ theater_href(info.theater, start, end) }}">{{ info.theater }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}未归战区{% endif %}
                     · 群主 {% if info.owner_name %}{{ info.owner_name }}{% if info.owner_dept %}（{{ info.owner_dept|dept_leaf }}）{% endif %}{% else %}未同步{% endif %}
                     · 群人数 {% if info.member_count is not none %}{{ info.member_count }}{% else %}未同步{% endif %}
                     · 创建时间 {{ info.create_time|minute_time or '未知' }}

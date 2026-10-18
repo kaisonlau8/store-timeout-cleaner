@@ -13,6 +13,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const days = (list) => (list.length === 7 ? '每天' : list.map((d) => '周' + DAY[d]).join('、'));
+    const THIRTY_MINUTE_RULE_ID = '2055182790919555459';
+    function isThirtyMinuteRule(group, minutes) {
+        return String((group && group.rule_key) || '') === THIRTY_MINUTE_RULE_ID && Number(minutes) === 30;
+    }
+    const monthStart = () => today().slice(0, 7) + '-01';
+
+    function ruleLogHref(ruleId) {
+        const params = new URLSearchParams();
+        params.set('rule_id', String(ruleId || ''));
+        params.set('start', monthStart());
+        params.set('end', today());
+        return '/timeout?' + params.toString();
+    }
 
     async function api(url, body) {
         const res = await fetch(url, body === undefined ? { credentials: 'same-origin', redirect: 'error', signal: AbortSignal.timeout(10000) } : {
@@ -29,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tbody = document.querySelector('#rules-table tbody');
         tbody.innerHTML = rules.length ? rules.map((g, i) => {
             const c = g.current;
+            const logHref = ruleLogHref(c.rule_key);
             const hist = g.history.length > 1 ? '<div class="hist">历史版本：' + g.history.slice(1).map((h) =>
                 esc(h.effective_from + ' ~ ' + (h.effective_to || '…') + ' · ' + h.minutes + ' 分钟 · ' + h.start_time + '-' + h.end_time + (h.enabled ? '' : ' · 停用'))).join('<br>') + '</div>' : '';
             return '<tr><td data-card-title><strong>' + esc(c.name) + '</strong>' + (c.note ? '<div class="hist">' + esc(c.note) + '</div>' : '') + hist + '</td>' +
@@ -36,7 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 '<td>' + esc(c.effective_from) + ' 起' + (c.effective_to ? '<br>至 ' + esc(c.effective_to) : '') + '</td>' +
                 '<td>' + (c.enabled ? '<span class="ant-tag ant-tag-success">启用</span>' : '<span class="ant-tag">停用</span>') + '</td>' +
                 '<td>' + (c.counts_for_kpi ? '<span class="ant-tag ant-tag-processing">计入 KPI</span>' : '<span class="ant-tag ant-tag-warning kpi-off">仅展示，不计 KPI</span>') + '</td>' +
-                '<td><div class="ops"><button type="button" class="ant-btn ant-btn-sm" data-edit="' + i + '"><svg class="ai" aria-hidden="true"><use href="#i-edit"/></svg>编辑</button>' +
+                '<td><div class="ops"><a class="ant-btn ant-btn-sm" data-rule-log="' + i + '" href="' + esc(logHref) + '"><svg class="ai" aria-hidden="true"><use href="#i-right"/></svg>查看触发记录</a>' +
+                '<button type="button" class="ant-btn ant-btn-sm" data-edit="' + i + '"><svg class="ai" aria-hidden="true"><use href="#i-edit"/></svg>编辑</button>' +
                 '<button type="button" class="ant-btn ant-btn-sm" data-toggle="' + i + '">' + (c.enabled ? '停用' : '启用') + '</button></div></td></tr>';
         }).join('') : '<tr><td colspan="8" class="cl-muted" style="text-align:center">暂无规则</td></tr>';
         const a = payload.archive || {};
@@ -102,8 +117,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const form = $('rule-form');
+    let kpiConfirmedKey = null;
+    let modalSession = 0;
+    let submitInFlight = false;
     function openModal(i) {
+        modalSession += 1;
+        if (!$('kpi-confirm').hidden) finishKpiConfirm(false);
         editing = i == null ? null : rules[i];
+        kpiConfirmedKey = null;
         const c = editing ? editing.current : { name: '', minutes: 30, days: [1, 2, 3, 4, 5], start_time: '09:00', end_time: '20:00', enabled: true, counts_for_kpi: true, note: '' };
         $('rule-title').textContent = editing ? '编辑规则' : '新建规则';
         form.name.value = c.name; form.minutes.value = c.minutes;
@@ -118,10 +139,53 @@ document.addEventListener('DOMContentLoaded', () => {
         form.name.focus();
     }
     function closeModal() {
+        modalSession += 1;
+        if (!$('kpi-confirm').hidden) finishKpiConfirm(false);
+        form.inert = false;
+        form.removeAttribute('inert');
         const mask = $('rule-mask'), modal = $('rule-modal');
         mask.classList.remove('on'); modal.classList.remove('on');
         if (matchMedia('(prefers-reduced-motion: reduce)').matches) { mask.hidden = true; modal.hidden = true; return; }
         setTimeout(() => { mask.hidden = true; modal.hidden = true; }, 200);
+    }
+
+    let confirmResolve = null;
+    function finishKpiConfirm(ok) {
+        const mask = $('kpi-confirm-mask'), modal = $('kpi-confirm');
+        mask.classList.remove('on'); modal.classList.remove('on');
+        mask.hidden = true; modal.hidden = true;
+        form.inert = false;
+        form.removeAttribute('inert');
+        const resolve = confirmResolve;
+        confirmResolve = null;
+        if (resolve) resolve(!!ok);
+    }
+    function confirmKpi() {
+        if (confirmResolve) finishKpiConfirm(false);
+        return new Promise((resolve) => {
+            confirmResolve = resolve;
+            form.inert = true;
+            form.setAttribute('inert', '');
+            $('kpi-confirm-mask').hidden = false;
+            $('kpi-confirm').hidden = false;
+            requestAnimationFrame(() => {
+                $('kpi-confirm-mask').classList.add('on');
+                $('kpi-confirm').classList.add('on');
+            });
+            $('kpi-confirm-cancel').focus();
+        });
+    }
+    function kpiConfirmKey() {
+        return String((editing && editing.rule_key) || '__new__') + '|' + Number(form.minutes.value);
+    }
+    async function confirmKpiIfNeeded() {
+        if (!form.counts_for_kpi.checked) return true;
+        if (isThirtyMinuteRule(editing, form.minutes.value)) return true;
+        const key = kpiConfirmKey();
+        if (kpiConfirmedKey === key) return true;
+        const ok = await confirmKpi();
+        if (ok) kpiConfirmedKey = key;
+        return ok;
     }
     async function submit(body, key) {
         const res = await api('/api/admin/rules' + (key ? '/' + encodeURIComponent(key) : ''), body);
@@ -129,19 +193,37 @@ document.addEventListener('DOMContentLoaded', () => {
         await load();
         if (res.job) showJob(res.job);
     }
+    form.counts_for_kpi.addEventListener('change', async () => {
+        if (!form.counts_for_kpi.checked || isThirtyMinuteRule(editing, form.minutes.value)) return;
+        const ok = await confirmKpiIfNeeded();
+        if (!ok) form.counts_for_kpi.checked = false;
+    });
     form.addEventListener('submit', async (ev) => {
         ev.preventDefault();
-        const body = {
-            name: form.name.value.trim(), minutes: Number(form.minutes.value),
-            days: Array.from(form.querySelectorAll('[name=days]:checked')).map((el) => Number(el.value)),
-            start: form.start.value, end: form.end.value, effective_from: form.effective_from.value,
-            enabled: form.enabled.checked, counts_for_kpi: form.counts_for_kpi.checked, note: form.note.value.trim(),
-        };
-        const btn = $('rule-save');
-        FB.setButtonLoading(btn, true);
-        try { await submit(body, editing && editing.rule_key); closeModal(); }
-        catch (e) { $('rule-error').hidden = false; $('rule-error').textContent = e.message; FB.message('error', e.message); }
-        finally { FB.setButtonLoading(btn, false); }
+        if (submitInFlight) return;
+        const session = modalSession;
+        submitInFlight = true;
+        try {
+            if (!(await confirmKpiIfNeeded())) {
+                if (session !== modalSession) return;
+                form.counts_for_kpi.checked = false;
+                return;
+            }
+            if (session !== modalSession) return;
+            const body = {
+                name: form.name.value.trim(), minutes: Number(form.minutes.value),
+                days: Array.from(form.querySelectorAll('[name=days]:checked')).map((el) => Number(el.value)),
+                start: form.start.value, end: form.end.value, effective_from: form.effective_from.value,
+                enabled: form.enabled.checked, counts_for_kpi: form.counts_for_kpi.checked, note: form.note.value.trim(),
+            };
+            const btn = $('rule-save');
+            FB.setButtonLoading(btn, true);
+            try { await submit(body, editing && editing.rule_key); closeModal(); }
+            catch (e) { $('rule-error').hidden = false; $('rule-error').textContent = e.message; FB.message('error', e.message); }
+            finally { FB.setButtonLoading(btn, false); }
+        } finally {
+            submitInFlight = false;
+        }
     });
     document.querySelector('#rules-table').addEventListener('click', async (ev) => {
         const ed = ev.target.closest('[data-edit]');
@@ -160,7 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
     $('rule-x').addEventListener('click', closeModal);
     $('rule-cancel').addEventListener('click', closeModal);
     $('rule-mask').addEventListener('click', closeModal);
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('rule-modal').hidden) closeModal(); });
+    $('kpi-confirm-mask').addEventListener('click', () => finishKpiConfirm(false));
+    $('kpi-confirm-cancel').addEventListener('click', () => finishKpiConfirm(false));
+    $('kpi-confirm-ok').addEventListener('click', () => finishKpiConfirm(true));
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (!$('kpi-confirm').hidden) finishKpiConfirm(false);
+        else if (!$('rule-modal').hidden) closeModal();
+    });
     $('btn-recompute').addEventListener('click', async () => {
         const btn = $('btn-recompute');
         FB.setButtonLoading(btn, true);

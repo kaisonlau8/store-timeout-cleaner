@@ -31,3 +31,27 @@
 .rule-form input:not([type=checkbox]){height:36px!important;min-height:36px;line-height:1.5}
 
 @media (prefers-reduced-motion: reduce){.rule-mask,.rule-modal{transition:none}}
+
+/* 非 30 分钟规则勾选 KPI 的前端二次确认（antd modal 结构） */
+.kpi-confirm-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1310;opacity:0;transition:opacity .2s ease}
+.kpi-confirm-mask.on{opacity:1}
+.kpi-confirm{position:fixed;left:50%;top:50%;z-index:1311;width:min(416px,calc(100vw - 32px));box-sizing:border-box;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);opacity:0;transform:translate(-50%,-50%) scale(.96);transition:opacity .2s ease,transform .2s cubic-bezier(.23,1,.32,1)}
+.kpi-confirm.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.kpi-confirm .ant-modal-content{padding:0}
+.kpi-confirm .ant-modal-body{padding:20px 24px 8px}
+.kpi-confirm .ant-modal-confirm-title{font-size:16px;font-weight:600;line-height:1.5;color:rgba(0,0,0,.88)}
+.kpi-confirm .ant-modal-confirm-content{margin-top:8px;font-size:14px;line-height:1.7;color:rgba(0,0,0,.65)}
+.kpi-confirm .ant-modal-confirm-btns{display:flex;justify-content:flex-end;gap:8px;padding:12px 24px 20px}
+.kpi-confirm .ant-modal-confirm-btns .ant-btn{height:32px;min-width:72px;display:inline-flex;align-items:center;justify-content:center}
+.kpi-confirm[hidden],.kpi-confirm-mask[hidden]{display:none!important}
+@media (prefers-reduced-motion: reduce){.kpi-confirm-mask,.kpi-confirm{transition:none}}
+
+/* 操作列：桌面一行放下三个操作；移动端卡片内允许换行 */
+.rules-table th:last-child,.rules-table td:last-child{white-space:nowrap}
+.rules-table .ops{flex-wrap:nowrap}
+.rules-table .ops .ant-btn{white-space:nowrap}
+@media (max-width:860px){
+  .rules-table th:last-child,.rules-table td:last-child{white-space:normal}
+  .rules-table .ops{flex-wrap:wrap}
+  .rules-table .ops .ant-btn{flex:1 1 auto}
+}

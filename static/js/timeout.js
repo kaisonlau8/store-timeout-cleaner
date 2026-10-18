@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const PALETTE = ['#1a1a2e', '#409eff', '#e6a23c', '#67c23a', '#f56c6c', '#909399'];
     let chart;
     let meta = { theaters: [], stores: [], rules: [] };
+    const RULE_ID = (new URLSearchParams(location.search).get('rule_id') || '').trim();
 
     const theaterSel = document.getElementById('theater-select');
     const storeInput = document.getElementById('store-input');
@@ -55,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
             grain: params.get('grain') || '',
             start: params.get('start') || '',
             end: params.get('end') || '',
+            rule_id: RULE_ID || params.get('rule_id') || '',
         };
     }
 
@@ -106,12 +108,13 @@ document.addEventListener('DOMContentLoaded', () => {
             grain: selectedGrain(),
             start: startDate.value,
             end: endDate.value,
+            rule_id: RULE_ID || '',
         };
     }
 
     function queryString(q) {
         const params = new URLSearchParams();
-        ['scope', 'id', 'theater', 'q', 'grain', 'start', 'end'].forEach((key) => {
+        ['scope', 'id', 'theater', 'q', 'grain', 'start', 'end', 'rule_id'].forEach((key) => {
             if (q[key]) params.set(key, q[key]);
         });
         return params.toString();
@@ -128,6 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         put('grain', q.grain);
         put('start', q.start);
         put('end', q.end);
+        put('rule_id', q.rule_id);
         if (q.scope && q.scope !== 'national') {
             put('scope', q.scope);
             put('id', q.id);
@@ -154,29 +158,35 @@ document.addEventListener('DOMContentLoaded', () => {
             ruleCards.innerHTML = '';
             return;
         }
-        ruleCards.innerHTML = rules.map((rule) =>
-            cardHtml(
+        ruleCards.innerHTML = rules.map((rule) => {
+            const displayOnly = window.stcKpiTag && window.stcKpiTag(rule.rule_name);
+            return cardHtml(
                 rule.rule_name || rule.rule_id,
                 rule.triggers || 0,
-                (window.stcKpiTag && window.stcKpiTag(rule.rule_name) ? '仅展示，不计 KPI · ' : '') + '消息 ' + (rule.messages || 0) + ' · 群 ' + (rule.rooms || 0) + ' · 点击看明细',
-                { rule_id: rule.rule_id }
-            )
-        ).join('');
+                (displayOnly ? '仅展示，不计 KPI · ' : '') + '消息 ' + (rule.messages || 0) + ' · 群 ' + (rule.rooms || 0) + ' · 点击看明细',
+                { rule_id: rule.rule_id },
+                displayOnly ? '' : '规则触发统计（同一消息先命中 10 分钟规则时记为重复触发），评分口径见超时评分'
+            );
+        }).join('');
     }
 
     let lastQuery = {};
     function evParams(extra) {
         const q = lastQuery;
-        return Object.assign({ theater: q.theater || '', q: q.scope === 'store' ? '' : (q.q || ''), store: q.scope === 'store' ? q.id : '', start: q.start || '', end: q.end || '' }, extra || {});
+        return Object.assign({ theater: q.theater || '', q: q.scope === 'store' ? '' : (q.q || ''), store: q.scope === 'store' ? q.id : '', start: q.start || '', end: q.end || '', rule_id: q.rule_id || '' }, extra || {});
     }
     function evAttr(extra, title) {
         return ' data-sd-events="' + escapeHtml(JSON.stringify(evParams(extra))) + '" data-sd-title="' + escapeHtml(title) + '"';
     }
-    function cardHtml(title, value, hint, extra) {
+    function cardHtml(title, value, hint, extra, note) {
         const click = extra ? ' sd-clickable" role="button" tabindex="0"' + evAttr(extra, title + ' · 明细') + ' title="点击查看明细' : '';
+        const noteAttr = note ? ' title="' + escapeHtml(note) + '"' : '';
+        const noteIcon = note
+            ? '<span class="rule-card-info" role="img" title="' + escapeHtml(note) + '" aria-label="' + escapeHtml(note) + '"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span>'
+            : '';
         return (
             '<div class="card' + click + '">' +
-                '<h4>' + escapeHtml(title) + '</h4>' +
+                '<h4' + noteAttr + '>' + escapeHtml(title) + noteIcon + '</h4>' +
                 '<div class="big-number" style="font-size:32px">' + value + '</div>' +
                 '<div class="sub-stat">' + escapeHtml(hint) + '</div>' +
             '</div>'

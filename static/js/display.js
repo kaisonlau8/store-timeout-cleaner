@@ -8,6 +8,16 @@ function coverageStoreHref(name) {
     return '/store/' + encodeURIComponent(name) + (params.size ? '?' + params.toString() : '');
 }
 
+function theaterPageHref(name) {
+    const params = new URLSearchParams();
+    const current = new URLSearchParams(window.location.search);
+    const start = (current.get('start') || '').trim();
+    const end = (current.get('end') || '').trim();
+    if (start) params.set('start', start);
+    if (end) params.set('end', end);
+    return '/theater/' + encodeURIComponent(name) + (params.size ? '?' + params.toString() : '');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     function escapeHtml(text) {
         return String(text)
@@ -65,7 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ? rows.map((row, idx) =>
                 '<tr><td>' + (idx + 1) + '</td>' +
                 '<td data-card-title><a class="store-link" href="' + coverageStoreHref(row.name) + '">' + escapeHtml(row.name) + '</a></td>' +
-                '<td>' + escapeHtml(row.theater || '—') + '</td>' +
+                '<td>' + (row.theater
+                    ? '<a class="store-link" href="' + theaterPageHref(row.theater) + '">' + escapeHtml(row.theater) + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>'
+                    : '—') + '</td>' +
                 '<td>' + row.group_count + '</td>' +
                 '<td>' + row.robot_group_count + '</td></tr>'
             ).join('')

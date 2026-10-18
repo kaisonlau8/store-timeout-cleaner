@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    {% include '_range_assets.html' %}
+    {% from '_range_picker.html' import picker with context %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>战区详情{% if theater %} · {{ theater }}{% endif %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
+    <style>{{ ds_css()|safe }}</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
+    <style>
+        .theater-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+        .theater-summary .card { min-width: 0; }
+        .theater-summary .big-number { font-size: 30px; }
+        .theater-summary .sub-stat { color: rgba(0,0,0,.45); font-size: 12px; line-height: 1.6; }
+        .theater-table td.num, .theater-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .theater-kpi-info { display: inline-flex; align-items: center; margin-left: 6px; color: rgba(0,0,0,.45); vertical-align: -2px; cursor: help; }
+        .theater-kpi-info .ai { font-size: 14px; }
+        .theater-table td, .theater-table th { vertical-align: middle; }
+        .theater-store-link { white-space: nowrap; }
+        @media (max-width: 1100px) {
+            .theater-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (max-width: 720px) {
+            .theater-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+            .theater-summary .card { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
+        {% include '_nav.html' %}
+        <span class="cl-meta">战区 › 门店 › 群</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header" data-ds-back="{{ back_href }}" data-ds-back-label="拉群覆盖">
+            <div class="ant-page-header-heading">
+                <h1>{{ theater }}</h1>
+                <div class="ant-page-header-sub">
+                    {% if not_found %}
+                        未知战区 · 没有找到该战区下的门店或客户群
+                    {% else %}
+                        战区概况 · {{ start }} ~ {{ end }}
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
+        {% if not_found %}
+        <div class="no-data">
+            <div class="ant-empty">
+                <div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div>
+                <h2 class="ant-empty-title">没有这个战区</h2>
+                <p class="ant-empty-desc">客户群和评分数据里都没有「{{ theater }}」这个战区，可能是名称有误或尚未同步。</p>
+                <p><a class="store-link" href="{{ back_href }}">返回拉群覆盖<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a></p>
+            </div>
+        </div>
+        {% else %}
+        <form class="month-selector timeout-filters list-filters" method="get" action="{{ request.path }}">
+            {{ picker(start, end) }}
+            <button type="submit" class="filter-btn">查询</button>
+        </form>
+
+        <div class="summary-cards theater-summary">
+            <div class="card">
+                <h4>门店数</h4>
+                <div class="big-number">{{ summary.store_count }}</div>
+                <div class="sub-stat">该战区下有客户群的门店</div>
+            </div>
+            <div class="card">
+                <h4>群总数</h4>
+                <div class="big-number">{{ summary.group_count }}</div>
+                <div class="sub-stat">纳入战区归属的客户群</div>
+            </div>
+            <div class="card">
+                <h4>已拉机器人群数</h4>
+                <div class="big-number">{{ summary.robot_count }}</div>
+                <div class="sub-stat">覆盖率 {{ summary.coverage }}</div>
+            </div>
+            <div class="card theater-kpi-card">
+                <h4>计入 KPI 超时</h4>
+                <div class="big-number">{{ summary.kpi_counted }}</div>
+                <div class="sub-stat">评分口径，与提醒页不同<span class="theater-kpi-info" role="img" aria-label="超时评分口径：先去掉仅展示规则再判重，含门店合并；与超时提醒页的规则触发数不同" title="超时评分口径：先去掉仅展示规则再判重，含门店合并；与超时提醒页的规则触发数不同"><svg class="ai" aria-hidden="true"><use href="#i-info-circle"/></svg></span></div>
+            </div>
+            <div class="card">
+                <h4>仅展示（不计 KPI）</h4>
+                {% if summary.display_only_state == 'error' %}
+                <div class="big-number">—</div>
+                <div class="sub-stat">暂不可用{% if summary.display_only_rules %} · 规则：{{ summary.display_only_rules|join('、') }}{% endif %}</div>
+                {% else %}
+                <div class="big-number">{{ summary.display_only }}</div>
+                <div class="sub-stat">{% if summary.display_only_rules %}规则：{{ summary.display_only_rules|join('、') }} · 不计入 KPI / 评分{% else %}暂无仅展示规则{% endif %}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="stat-block store-block">
+            <div class="table-head">
+                <h3>门店明细</h3>
+                <span class="chart-hint">按计入 KPI 超时倒序</span>
+            </div>
+            <div class="store-table-wrapper">
+                <table class="store-table theater-table" data-ds-primary>
+                    <thead>
+                        <tr>
+                            <th data-card-title>门店</th>
+                            <th class="num">群数</th>
+                            <th class="num">已拉机器人</th>
+                            <th class="num">覆盖率</th>
+                            <th class="num">计入 KPI 超时</th>
+                            <th>评分页</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td data-card-title><a class="store-link theater-store-link" href="/store/{{ row.name|urlencode }}?start={{ start|urlencode }}&amp;end={{ end|urlencode }}&amp;theater={{ theater|urlencode }}">{{ row.name }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a></td>
+                            <td class="num">{{ row.group_count }}</td>
+                            <td class="num">{{ row.robot_count }}</td>
+                            <td class="num">{{ row.coverage }}</td>
+                            <td class="num">{{ row.kpi_counted }}</td>
+                            <td><a class="store-link" href="/score/store?name={{ row.name|urlencode }}&amp;start={{ start|urlencode }}&amp;end={{ end|urlencode }}&amp;theater={{ theater|urlencode }}">超时评分<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" style="text-align:center" class="cl-muted">该战区暂无可展示的门店</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if unassigned %}
+        <div class="store-table-wrapper ds-collapse" data-ds-title="未归店群" data-ds-count="{{ unassigned|length }}">
+            <table class="store-table theater-table">
+                <thead>
+                    <tr>
+                        <th data-card-title>群名</th>
+                        <th>群 ID</th>
+                        <th>机器人</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in unassigned %}
+                    <tr>
+                        <td data-card-title>{% if row.room_id %}<a class="store-link" href="/group/{{ row.room_id|urlencode }}?start={{ start|urlencode }}&amp;end={{ end|urlencode }}">{{ row.group_name or '（未命名）' }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}{{ row.group_name or '（未命名）' }}{% endif %}</td>
+                        <td>{{ row.room_id or '暂无' }}</td>
+                        <td>{% if row.in_robot %}<span class="ant-tag ant-tag-success">已拉机器人</span>{% else %}<span class="ant-tag">未拉</span>{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="cl-muted">该战区没有未归店群</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+    <script>{{ ds_cards()|safe }}</script>
+</body>
+</html>

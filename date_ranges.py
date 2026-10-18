@@ -4,6 +4,8 @@ import logging
 import re
 from zoneinfo import ZoneInfo
 
+from urllib.parse import urlencode
+
 from flask import g, jsonify, render_template, request
 
 MIN_DATE = date(2026, 1, 1)
@@ -52,7 +54,7 @@ def install_date_ranges(app):
     @app.before_request
     def validate_ranges():
         path = request.path
-        if path.startswith('/group/') or path in ('/score', '/score/store', '/timeout') or path.startswith('/api/score/') or path in ('/api/timeout/chart', '/api/timeout/export', '/api/timeout/events'):
+        if path.startswith('/group/') or path.startswith('/theater/') or path in ('/score', '/score/store', '/timeout') or path.startswith('/api/score/') or path in ('/api/timeout/chart', '/api/timeout/export', '/api/timeout/events'):
             g.date_range = parse_range(request.args.get('start'), request.args.get('end'))
         elif path.startswith('/store/'):
             g.date_range = parse_range(request.args.get('date_from', request.args.get('start')), request.args.get('date_to', request.args.get('end')))
@@ -82,4 +84,24 @@ def install_date_ranges(app):
         )
         if request.path.startswith('/api/'):
             return jsonify({'error': str(exc), 'code': 'invalid_date_range'}), 400
-        return render_template('date_range_error.html', error=str(exc)), 400
+        date_keys = {'start', 'end', 'date_from', 'date_to', 'group_from', 'group_to'}
+        retry_pairs = [
+            (key, value)
+            for key, value in request.args.items(multi=True)
+            if key not in date_keys
+        ]
+        retry_href = request.path + ('?' + urlencode(retry_pairs) if retry_pairs else '')
+        if request.path == '/timeout':
+            nav_active = 'timeout'
+        elif request.path == '/groups':
+            nav_active = 'groups'
+        elif request.path == '/score' or request.path.startswith('/score/'):
+            nav_active = 'score'
+        else:
+            nav_active = 'coverage'
+        return render_template(
+            'date_range_error.html',
+            error=str(exc),
+            retry_href=retry_href,
+            nav_active=nav_active,
+        ), 400

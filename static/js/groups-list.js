@@ -20,6 +20,16 @@
         return new URLSearchParams(location.search);
     }
 
+    function theaterHref(name) {
+        var params = new URLSearchParams();
+        var current = currentParams();
+        var start = (current.get('start') || '').trim();
+        var end = (current.get('end') || '').trim();
+        if (start) params.set('start', start);
+        if (end) params.set('end', end);
+        return '/theater/' + encodeURIComponent(name) + (params.size ? '?' + params.toString() : '');
+    }
+
     function setTab(name, write) {
         activeTab = name === 'keyword' ? 'keyword' : 'list';
         tabButtons.forEach(function (button) {
@@ -102,7 +112,7 @@
                 ? '<a data-ds-link="off" href="/store/' + encodeURIComponent(row.store) + '">' + esc(row.store) + '</a>'
                 : '<span class="cl-muted">未归店</span>';
             var theaterCell = row.theater
-                ? esc(row.theater)
+                ? '<a class="store-link" href="' + theaterHref(row.theater) + '">' + esc(row.theater) + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>'
                 : '<span class="cl-muted">未归战区</span>';
             var robotCell = row.in_robot
                 ? '<span class="ant-tag ant-tag-success">已拉机器人</span>'

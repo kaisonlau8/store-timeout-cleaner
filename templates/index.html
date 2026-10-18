@@ -129,7 +129,7 @@
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td data-card-title><a class="store-link" href="{{ coverage_store_href(row.name, coverage.theater, coverage.q) }}">{{ row.name }}</a></td>
-                        <td>{{ row.theater or '—' }}</td>
+                        <td>{% if row.theater %}<a class="store-link" href="{{ theater_href(row.theater, request.args.get('start', ''), request.args.get('end', '')) }}">{{ row.theater }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}—{% endif %}</td>
                         <td>{{ row.group_count }}</td>
                         <td>{{ row.robot_group_count }}</td>
                     </tr>
@@ -263,7 +263,7 @@
     </script>
     {% endif %}
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/display.js') }}?v=5"></script>
+    <script src="{{ url_for('static', filename='js/display.js') }}?v=6"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

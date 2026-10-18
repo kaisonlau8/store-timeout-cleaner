@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import quote
 
 from list_filters import store_query_match
+from timeout_store import is_readonly_open_error
 
 
 class KeywordError(ValueError):
@@ -14,9 +15,19 @@ class KeywordError(ValueError):
 
 
 def open_ro(db_path: str) -> sqlite3.Connection:
-    """只读打开 sqlite（uri mode=ro），供统计接口使用，避免误写。"""
-    conn = sqlite3.connect("file:" + quote(db_path) + "?mode=ro", uri=True)
+    """只读打开 sqlite；只读副本用 immutable 避免创建 -wal/-shm。"""
+    uri = "file:" + quote(db_path) + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+    except sqlite3.OperationalError as exc:
+        if not is_readonly_open_error(exc):
+            conn.close()
+            raise
+        conn.close()
+        conn = sqlite3.connect(uri + "&immutable=1", uri=True)
+        conn.row_factory = sqlite3.Row
     return conn
 
 

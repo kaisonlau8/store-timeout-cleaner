@@ -35,7 +35,7 @@
                 <h1>{{ detail.store if detail else (name or '门店拉群明细') }}</h1>
                 <div class="ant-page-header-sub">
 {% if detail %}
-                        {{ detail.theater or '未归战区' }}
+                        {% if detail.theater %}<a class="store-link" href="{{ theater_href(detail.theater, filters.date_from, filters.date_to) }}">{{ detail.theater }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}未归战区{% endif %}
                         · 群总数 {{ detail.group_count }}
                         · 已拉机器人 {{ detail.robot_count }}
                         · 未拉机器人 {{ detail.pending_count }}

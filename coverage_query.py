@@ -232,6 +232,78 @@ def coverage_back_href(theater: str = "", q: str = "") -> str:
     return "/?" + urlencode(params)
 
 
+def theater_href(theater: str, start: str = "", end: str = "", **extra: str) -> str:
+    """战区详情页地址；有日期参数时原样带上，供全站战区链接复用。"""
+    name = (theater or "").strip()
+    if not name:
+        return "/"
+    params: dict[str, str] = {}
+    for key, value in (("start", start), ("end", end), *extra.items()):
+        value = str(value or "").strip()
+        if value:
+            params[key] = value
+    query = urlencode(params)
+    return "/theater/" + quote(name, safe="") + ("?" + query if query else "")
+
+
+def theater_coverage(db_path: str, theater: str) -> dict[str, Any]:
+    """战区在 chat_store 中的门店群数、机器人覆盖与未归店群。"""
+    name = (theater or "").strip()
+    empty = {"stores": [], "unassigned": [], "group_count": 0, "robot_count": 0}
+    if not name or not db_path or not os.path.isfile(db_path):
+        return empty
+    try:
+        conn = open_ro(db_path)
+    except sqlite3.Error:
+        return empty
+    try:
+        stores = [
+            {
+                "name": row["store"],
+                "group_count": int(row["group_count"] or 0),
+                "robot_count": int(row["robot_count"] or 0),
+            }
+            for row in conn.execute(
+                """
+                SELECT TRIM(store) AS store, COUNT(*) AS group_count,
+                       SUM(CASE WHEN in_robot THEN 1 ELSE 0 END) AS robot_count
+                FROM chat_store
+                WHERE TRIM(IFNULL(store, '')) != '' AND TRIM(IFNULL(theater, '')) = ?
+                GROUP BY TRIM(store)
+                ORDER BY group_count DESC, robot_count DESC, store
+                """,
+                (name,),
+            )
+        ]
+        unassigned = [
+            {
+                "room_id": row["room_id"] or "",
+                "group_name": row["group_name"] or "",
+                "in_robot": int(row["in_robot"] or 0),
+            }
+            for row in conn.execute(
+                """
+                SELECT room_id, group_name, in_robot
+                FROM chat_store
+                WHERE TRIM(IFNULL(store, '')) = '' AND TRIM(IFNULL(theater, '')) = ?
+                ORDER BY group_name, room_id
+                """,
+                (name,),
+            )
+        ]
+    except sqlite3.Error:
+        return empty
+    finally:
+        conn.close()
+    return {
+        "stores": stores,
+        "unassigned": unassigned,
+        "group_count": sum(row["group_count"] for row in stores) + len(unassigned),
+        "robot_count": sum(row["robot_count"] for row in stores)
+        + sum(1 for row in unassigned if row["in_robot"]),
+    }
+
+
 def coverage_store_href(name: str, theater: str = "", q: str = "") -> str:
     """以门店名生成稳定地址；首页搜索另存为 back_q，避免影响群名搜索。"""
     params: dict[str, str] = {}
