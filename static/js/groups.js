@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = rows.map((row) => {
             const name = escapeHtml(row.group_name);
             const group = row.room_id
-                ? '<button type="button" class="sd-link" data-sd-members="' + escapeHtml(row.room_id) + '" data-sd-name="' + escapeHtml(row.group_name) + '" title="查看群成员">' + name + '</button>'
+                ? '<a class="sd-link" href="/group/' + encodeURIComponent(row.room_id) + '">' + name + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>'
                 : name;
             return '<tr><td data-label="群名" data-card-title>' + group + '</td>' +
                 '<td data-label="是否已拉机器人">' + (row.in_robot ? '是' : '否') + '</td></tr>';

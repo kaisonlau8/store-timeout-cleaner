@@ -52,7 +52,7 @@ def install_date_ranges(app):
     @app.before_request
     def validate_ranges():
         path = request.path
-        if path in ('/score', '/score/store', '/timeout') or path.startswith('/api/score/') or path in ('/api/timeout/chart', '/api/timeout/export', '/api/timeout/events'):
+        if path.startswith('/group/') or path in ('/score', '/score/store', '/timeout') or path.startswith('/api/score/') or path in ('/api/timeout/chart', '/api/timeout/export', '/api/timeout/events'):
             g.date_range = parse_range(request.args.get('start'), request.args.get('end'))
         elif path.startswith('/store/'):
             g.date_range = parse_range(request.args.get('date_from', request.args.get('start')), request.args.get('date_to', request.args.get('end')))
