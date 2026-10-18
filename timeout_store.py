@@ -38,7 +38,11 @@ CREATE TABLE IF NOT EXISTS chat_store (
   theater TEXT,
   group_name TEXT,
   create_time TEXT,
-  in_robot INTEGER NOT NULL DEFAULT 0
+  in_robot INTEGER NOT NULL DEFAULT 0,
+  owner_id TEXT,
+  owner_name TEXT,
+  owner_dept TEXT,
+  member_count INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS robot_chat (
@@ -46,7 +50,8 @@ CREATE TABLE IF NOT EXISTS robot_chat (
 );
 
 CREATE TABLE IF NOT EXISTS employee (
-  userid TEXT PRIMARY KEY
+  userid TEXT PRIMARY KEY,
+  name TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sync_meta (
@@ -88,8 +93,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE timeout_event ADD COLUMN {col} TEXT")
     _archive_excel(conn)
     group_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_store)")}
-    if "create_time" not in group_cols:
-        conn.execute("ALTER TABLE chat_store ADD COLUMN create_time TEXT")
+    for col, col_type in (
+        ("create_time", "TEXT"),
+        ("owner_id", "TEXT"),
+        ("owner_name", "TEXT"),
+        ("owner_dept", "TEXT"),
+        ("member_count", "INTEGER"),
+    ):
+        if col not in group_cols:
+            conn.execute(f"ALTER TABLE chat_store ADD COLUMN {col} {col_type}")
+    employee_cols = {row[1] for row in conn.execute("PRAGMA table_info(employee)")}
+    if "name" not in employee_cols:
+        conn.execute("ALTER TABLE employee ADD COLUMN name TEXT")
+    conn.commit()
 
 
 def _archive_excel(conn: sqlite3.Connection) -> None:
@@ -134,15 +150,21 @@ def replace_context(
     robot_chat_ids: Iterable[str],
     employee_ids: Iterable[str],
     group_rows: Iterable[dict[str, Any]],
+    employee_names: dict[str, str] | None = None,
 ) -> None:
     robot_set = {str(x) for x in robot_chat_ids if x}
     conn.execute("DELETE FROM robot_chat")
     conn.executemany("INSERT INTO robot_chat(room_id) VALUES (?)", [(x,) for x in sorted(robot_set)])
 
+    names = {str(key): "" if value is None else str(value) for key, value in (employee_names or {}).items() if key}
+    employee_ids_set = {str(i) for i in employee_ids if i} | set(names)
     conn.execute("DELETE FROM employee")
     conn.executemany(
-        "INSERT INTO employee(userid) VALUES (?)",
-        [(str(x),) for x in sorted({str(i) for i in employee_ids if i})],
+        "INSERT INTO employee(userid, name) VALUES (?, ?)",
+        [
+            (userid, names.get(userid, "").strip() or None)
+            for userid in sorted(employee_ids_set)
+        ],
     )
 
     conn.execute("DELETE FROM chat_store")
@@ -151,6 +173,12 @@ def replace_context(
         room_id = str(rec.get("group_id") or "").strip()
         if not room_id:
             continue
+        member_count = rec.get("member_count")
+        if member_count is not None:
+            try:
+                member_count = int(member_count)
+            except (TypeError, ValueError):
+                member_count = None
         rows.append(
             (
                 room_id,
@@ -159,10 +187,16 @@ def replace_context(
                 rec.get("group_name") or "",
                 rec.get("create_time") or None,
                 1 if room_id in robot_set else 0,
+                rec.get("owner_id") or None,
+                rec.get("owner") or None,
+                rec.get("dept") or None,
+                member_count,
             )
         )
     conn.executemany(
-        "INSERT OR REPLACE INTO chat_store(room_id, store, theater, group_name, create_time, in_robot) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO chat_store("
+        "room_id, store, theater, group_name, create_time, in_robot, owner_id, owner_name, owner_dept, member_count"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
 

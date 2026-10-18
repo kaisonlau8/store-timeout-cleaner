@@ -581,8 +581,10 @@ def test_static_asset_cache_versions_are_consistent():
     expected = {
         "stc-detail.css": "4",
         "stc-detail.js": "6",
-        "groups.js": "5",
-        "group.js": "2",
+        "groups.js": "6",
+        "groups-list.css": "1",
+        "groups-list.js": "3",
+        "group.js": "3",
         "store-page.js": "1",
         "timeout.js": "10",
     }

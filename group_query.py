@@ -55,9 +55,14 @@ def group_info(conn: sqlite3.Connection, room_id: str) -> dict[str, Any] | None:
         store_col = "store" if "store" in cols else "'' AS store"
         theater_col = "theater" if "theater" in cols else "'' AS theater"
         robot_col = "in_robot" if "in_robot" in cols else "0 AS in_robot"
+        owner_id_col = "owner_id" if "owner_id" in cols else "NULL AS owner_id"
+        owner_name_col = "owner_name" if "owner_name" in cols else "NULL AS owner_name"
+        owner_dept_col = "owner_dept" if "owner_dept" in cols else "NULL AS owner_dept"
+        member_count_col = "member_count" if "member_count" in cols else "NULL AS member_count"
         try:
             row = conn.execute(
-                f"SELECT room_id, {group_col}, {store_col}, {theater_col}, {create_col}, {robot_col} "
+                f"SELECT room_id, {group_col}, {store_col}, {theater_col}, {create_col}, {robot_col}, "
+                f"{owner_id_col}, {owner_name_col}, {owner_dept_col}, {member_count_col} "
                 "FROM chat_store WHERE room_id = ?",
                 (room_id,),
             ).fetchone()
@@ -71,6 +76,10 @@ def group_info(conn: sqlite3.Connection, room_id: str) -> dict[str, Any] | None:
                 "theater": row["theater"] or "",
                 "create_time": row["create_time"] or "",
                 "in_robot": int(row["in_robot"] or 0),
+                "owner_id": row["owner_id"],
+                "owner_name": row["owner_name"],
+                "owner_dept": row["owner_dept"],
+                "member_count": row["member_count"],
             }
 
     event_cols = _columns(conn, "timeout_event")
@@ -96,6 +105,10 @@ def group_info(conn: sqlite3.Connection, room_id: str) -> dict[str, Any] | None:
         "theater": row["theater"] or "",
         "create_time": "",
         "in_robot": 0,
+        "owner_id": None,
+        "owner_name": None,
+        "owner_dept": None,
+        "member_count": None,
     }
 
 
@@ -266,6 +279,15 @@ def local_context(
     end = int((moment + timedelta(minutes=minutes + 10)).timestamp())
     employees = {str(item) for item in (employee_ids or [])}
     robots = {str(item) for item in (robot_ids or [])}
+    employee_names: dict[str, str] = {}
+    if "name" in _columns(conn, "employee"):
+        try:
+            employee_names = {
+                str(row["userid"]): (row["name"] or "").strip()
+                for row in conn.execute("SELECT userid, name FROM employee")
+            }
+        except sqlite3.Error:
+            employee_names = {}
     try:
         rows = conn.execute(
             "SELECT msg_id, from_id, msgtime, msgtype, content FROM chat_msg "
@@ -278,8 +300,12 @@ def local_context(
 
     messages = []
     for row in rows:
-        sender = str(row["from_id"] or "")
-        role = _message_role(sender, employees, robots)
+        sender_id = str(row["from_id"] or "")
+        role = _message_role(sender_id, employees, robots)
+        if role == "staff":
+            sender = employee_names.get(sender_id) or "员工"
+        else:
+            sender = _ROLE_LABEL[role]
         try:
             when = datetime.fromtimestamp(int(row["msgtime"]), SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
         except (TypeError, ValueError, OSError):
@@ -289,6 +315,7 @@ def local_context(
                 "time": when,
                 "role": role,
                 "role_label": _ROLE_LABEL[role],
+                "sender": sender,
                 "text": _message_text(row["msgtype"], row["content"]),
                 "trigger": str(row["msg_id"] or "") == str(msg_id or "") and bool(msg_id),
             }

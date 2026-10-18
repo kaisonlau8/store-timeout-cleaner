@@ -3,102 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-    <title>群名统计 · 超时机器人统计</title>
+    <title>群管理 · 超时机器人统计</title>
     <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/groups-list.css') }}?v=1">
 </head>
 <body>
     {{ ds_sprite()|safe }}
+    {% set groups_tab = 'keyword' if request.args.get('tab') == 'keyword' else 'list' %}
     <header class="ant-header"><div class="in">
         <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
         {% set nav_active = 'groups' %}
         {% include '_nav.html' %}
-        <span class="cl-meta" id="synced-at">按群名关键字统计</span>
+        <span class="cl-meta" id="synced-at">群目录与关键字统计</span>
     </div></header>
     <div class="container">
         <header class="ant-page-header" data-ds-back="/" data-ds-back-label="首页">
             <div class="ant-page-header-heading">
-                <h1>群名统计</h1>
-                <div class="ant-page-header-sub">按客户群名称做关键字子串统计（大小写不敏感），数据来自 SCRM 同步的全量客户群</div>
+                <h1>群管理</h1>
+                <div class="ant-page-header-sub">群列表支持按群名 / 群 ID、战区、门店和机器人状态筛选；关键字统计按群名子串汇总</div>
             </div>
         </header>
 
-        <div class="month-selector timeout-filters groups-filters list-filters">
-            <div class="selector-group">
-                <label for="keyword-input">关键字</label>
-                <input type="text" id="keyword-input" value="X700-VIP" placeholder="输入群名关键字" autocomplete="off">
-            </div>
-            <div class="selector-group">
-                <label for="theater-select">战区</label>
-                <select id="theater-select">
-                    <option value="">全部战区</option>
-                </select>
-            </div>
-            <div class="selector-group">
-                <label for="store-q">门店</label>
-                <input type="search" id="store-q" placeholder="门店名称或编码" autocomplete="off">
-            </div>
-            <div class="selector-group">
-                <label>筛选</label>
-                <label class="ant-checkbox robot-checkbox"><input type="checkbox" id="robot-only">仅已拉机器人群</label>
-            </div>
-            <button class="filter-btn" id="query-btn" type="button"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>查询</button>
-            <a class="export-link groups-export" id="export-btn" href="/api/groups/keyword/export" title="导出 Excel（汇总 / 按战区 / 按门店 / 未归店群 / 群明细）"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
+        <div class="tabs groups-tabs" id="groups-tabs" role="tablist" aria-label="群管理视图">
+            <button type="button" class="tab-btn{% if groups_tab == 'list' %} active{% endif %}" data-tab="list" role="tab" aria-selected="{{ 'true' if groups_tab == 'list' else 'false' }}">群列表</button>
+            <button type="button" class="tab-btn{% if groups_tab == 'keyword' %} active{% endif %}" data-tab="keyword" role="tab" aria-selected="{{ 'true' if groups_tab == 'keyword' else 'false' }}">关键字统计</button>
         </div>
 
-        <p class="error-msg" id="groups-error" hidden></p>
+        <section class="tab-content{% if groups_tab == 'list' %} active{% endif %}" id="tab-list" role="tabpanel" aria-label="群列表">
+            <div class="month-selector timeout-filters groups-filters list-filters" id="groups-list-filters">
+                <div class="selector-group">
+                    <label for="list-q">搜索</label>
+                    <input type="search" id="list-q" placeholder="群名或群 ID" autocomplete="off">
+                </div>
+                <div class="selector-group">
+                    <label for="list-theater-select">战区</label>
+                    <select id="list-theater-select">
+                        <option value="">全部战区</option>
+                    </select>
+                </div>
+                <div class="selector-group">
+                    <label for="list-store-q">门店</label>
+                    <input type="search" id="list-store-q" placeholder="门店名称包含" autocomplete="off">
+                </div>
+                <div class="selector-group">
+                    <label for="list-robot-select">机器人</label>
+                    <select id="list-robot-select">
+                        <option value="all">全部</option>
+                        <option value="1">已拉机器人</option>
+                        <option value="0">未拉机器人</option>
+                    </select>
+                </div>
+                <button class="filter-btn" id="groups-list-query" type="button"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>查询</button>
+            </div>
 
-        <div id="groups-result" hidden>
-            <div class="summary-cards groups-cards" id="groups-cards"></div>
+            <p class="error-msg" id="groups-list-error" hidden></p>
 
-            <div class="stats-grid groups-tables">
-                <div class="stat-block">
-                    <div class="table-head"><h3>按战区</h3><span class="chart-hint table-hint">点击行可按该战区筛选</span></div>
+            <div class="store-table-wrapper" id="groups-list-table-wrap">
+                <table class="store-table" id="groups-list-table" data-ds-primary>
+                    <thead>
+                        <tr>
+                            <th data-card-title>群名</th>
+                            <th>门店</th>
+                            <th>战区</th>
+                            <th>机器人</th>
+                            <th>群主</th>
+                            <th>群人数</th>
+                            <th>创建时间</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="groups-pager" id="groups-list-pager">
+                <button type="button" class="sd-btn" id="groups-list-prev">上一页</button>
+                <span class="groups-page-info" id="groups-list-page-info">第 1 / 1 页 · 共 0 个群</span>
+                <button type="button" class="sd-btn" id="groups-list-next">下一页</button>
+            </div>
+
+            <div class="no-data" id="groups-list-empty" hidden>
+                <div class="ant-empty">
+                    <div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div>
+                    <h2 class="ant-empty-title">没有匹配的客户群</h2>
+                    <p class="ant-empty-desc">当前筛选条件下暂无客户群，调整搜索或筛选试试</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="tab-content{% if groups_tab == 'keyword' %} active{% endif %}" id="tab-keyword" role="tabpanel" aria-label="关键字统计">
+            <div class="month-selector timeout-filters groups-filters list-filters">
+                <div class="selector-group">
+                    <label for="keyword-input">关键字</label>
+                    <input type="text" id="keyword-input" value="X700-VIP" placeholder="输入群名关键字" autocomplete="off">
+                </div>
+                <div class="selector-group">
+                    <label for="theater-select">战区</label>
+                    <select id="theater-select">
+                        <option value="">全部战区</option>
+                    </select>
+                </div>
+                <div class="selector-group">
+                    <label for="store-q">门店</label>
+                    <input type="search" id="store-q" placeholder="门店名称或编码" autocomplete="off">
+                </div>
+                <div class="selector-group">
+                    <label>筛选</label>
+                    <label class="ant-checkbox robot-checkbox"><input type="checkbox" id="robot-only">仅已拉机器人群</label>
+                </div>
+                <button class="filter-btn" id="query-btn" type="button"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>查询</button>
+                <a class="export-link groups-export" id="export-btn" href="/api/groups/keyword/export" title="导出 Excel（汇总 / 按战区 / 按门店 / 未归店群 / 群明细）"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
+            </div>
+
+            <p class="error-msg" id="groups-error" hidden></p>
+
+            <div id="groups-result" hidden>
+                <div class="summary-cards groups-cards" id="groups-cards"></div>
+
+                <div class="stats-grid groups-tables">
+                    <div class="stat-block">
+                        <div class="table-head"><h3>按战区</h3><span class="chart-hint table-hint">点击行可按该战区筛选</span></div>
+                        <div class="store-table-wrapper">
+                            <table class="store-table" id="theater-table" data-ds-primary>
+                                <thead><tr><th data-card-title>战区</th><th>群数</th><th>门店数</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="stat-block">
+                        <div class="table-head"><h3>按门店</h3><span class="chart-hint table-hint">点击战区可筛选</span></div>
+                        <div class="store-table-wrapper">
+                            <table class="store-table" id="store-table" data-ds-primary>
+                                <thead><tr><th>排名</th><th data-card-title>门店</th><th>战区</th><th>群数</th><th>已拉机器人</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-block groups-unmatched">
+                    <div class="table-head"><h3>未归店群</h3><span class="chart-hint table-hint">群主部门缺门店或战区，无法归店</span></div>
                     <div class="store-table-wrapper">
-                        <table class="store-table" id="theater-table" data-ds-primary>
-                            <thead><tr><th data-card-title>战区</th><th>群数</th><th>门店数</th></tr></thead>
+                        <table class="store-table" id="unmatched-table">
+                            <thead><tr><th data-card-title>群名</th><th>是否已拉机器人</th></tr></thead>
                             <tbody></tbody>
                         </table>
                     </div>
                 </div>
-                <div class="stat-block">
-                    <div class="table-head"><h3>按门店</h3><span class="chart-hint table-hint">点击战区可筛选</span></div>
-                    <div class="store-table-wrapper">
-                        <table class="store-table" id="store-table" data-ds-primary>
-                            <thead><tr><th>排名</th><th data-card-title>门店</th><th>战区</th><th>群数</th><th>已拉机器人</th></tr></thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
             </div>
 
-            <div class="stat-block groups-unmatched">
-                <div class="table-head"><h3>未归店群</h3><span class="chart-hint table-hint">群主部门缺门店或战区，无法归店</span></div>
-                <div class="store-table-wrapper">
-                    <table class="store-table" id="unmatched-table">
-                        <thead><tr><th data-card-title>群名</th><th>是否已拉机器人</th></tr></thead>
-                        <tbody></tbody>
-                    </table>
+            <div class="no-data" id="groups-empty" hidden>
+                <div class="ant-empty">
+                    <div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div>
+                    <h2 class="ant-empty-title">没有匹配的客户群</h2>
+                    <p class="ant-empty-desc" id="empty-desc">当前关键字与筛选条件下暂无群名匹配，换个关键字试试</p>
                 </div>
             </div>
-        </div>
-
-        <div class="no-data" id="groups-empty" hidden>
-            <div class="ant-empty">
-                <div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div>
-                <h2 class="ant-empty-title">没有匹配的客户群</h2>
-                <p class="ant-empty-desc" id="empty-desc">当前关键字与筛选条件下暂无群名匹配，换个关键字试试</p>
-            </div>
-        </div>
+        </section>
     </div>
+    <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=6"></script>
-    <script src="{{ url_for('static', filename='js/groups.js') }}?v=5"></script>
+    <script src="{{ url_for('static', filename='js/groups.js') }}?v=6"></script>
+    <script src="{{ url_for('static', filename='js/groups-list.js') }}?v=3"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

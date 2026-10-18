@@ -41,7 +41,7 @@ class NavMenuTests(unittest.TestCase):
         for href, label in (
             ('href="/"', "拉群覆盖"),
             ('href="/timeout"', "超时提醒"),
-            ('href="/groups"', "群名统计"),
+            ('href="/groups"', "群管理"),
             ('href="/score"', "超时评分"),
         ):
             self.assertIn(href, html)

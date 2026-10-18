@@ -147,7 +147,7 @@ class GroupsApiTests(unittest.TestCase):
         resp = self.client.get("/groups")
         self.assertEqual(resp.status_code, 200)
         html = resp.get_data(as_text=True)
-        self.assertIn("群名统计", html)
+        self.assertIn("群管理", html)
         self.assertIn("门店名称或编码", html)
         self.assertIn('id="store-q"', html)
 
