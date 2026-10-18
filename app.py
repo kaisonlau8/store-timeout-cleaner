@@ -23,6 +23,7 @@ from coverage_query import (
     store_coverage_detail,
 )
 from group_keyword import KeywordError, open_ro, query_keyword_groups
+from group_query import group_events, group_info, local_context
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
 from score_web import register_score
@@ -178,6 +179,18 @@ def _inject_kpi():
     except Exception:
         names = set()
     return {"non_kpi_names": sorted(names)}
+
+
+@app.template_filter("minute_time")
+def _minute_time(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    return parsed.strftime("%Y-%m-%d %H:%M")
 
 
 @app.template_filter("kpi_tag")
@@ -498,6 +511,104 @@ def timeout_chart_api():
 
 
 _ROOM_RE = re.compile(r"^[A-Za-z0-9_\-]{6,80}$")
+
+
+@app.route("/group/<room_id>")
+def group_page(room_id):
+    start, end = (day.isoformat() for day in g.date_range)
+    db = _db_path()
+    info = None
+    groups = {"kpi_counted": [], "kpi_excluded": [], "display_only": []}
+    if _ROOM_RE.match(room_id) and os.path.isfile(db):
+        conn = open_ro(db)
+        try:
+            info = group_info(conn, room_id)
+            if info is not None:
+                groups = group_events(os.path.dirname(os.path.abspath(db)), conn, room_id, *g.date_range)
+        finally:
+            conn.close()
+    if info is None:
+        return (
+            render_template(
+                "group.html",
+                info=None,
+                groups=None,
+                counts=None,
+                latest="",
+                start=start,
+                end=end,
+                back_href="/",
+                back_label="拉群覆盖",
+                nav_active="coverage",
+            ),
+            404,
+        )
+    counts = {key: len(value) for key, value in groups.items()}
+    latest = max(
+        (event.get("created_at") or "" for items in groups.values() for event in items),
+        default="",
+    )
+    if info.get("store"):
+        back_href = (
+            "/store/" + quote(info["store"], safe="")
+            + "?start=" + quote(start) + "&end=" + quote(end)
+        )
+        back_label = info["store"]
+    else:
+        back_href, back_label = "/", "拉群覆盖"
+    return render_template(
+        "group.html",
+        info=info,
+        groups=groups,
+        counts=counts,
+        latest=latest,
+        start=start,
+        end=end,
+        back_href=back_href,
+        back_label=back_label,
+        nav_active="coverage",
+    )
+
+
+@app.route("/api/group/<room_id>/context")
+def group_context_api(room_id):
+    if not _ROOM_RE.match(room_id):
+        abort(400)
+    at = (request.args.get("at") or "").strip()
+    if not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", at):
+        abort(400)
+    try:
+        minutes = int(request.args.get("minutes") or 30)
+    except ValueError:
+        minutes = 30
+    minutes = min(max(minutes, 1), 240)
+    msg_id = (request.args.get("msg_id") or "").strip()[:120]
+    local = {"messages": [], "source": "local"}
+    db = _db_path()
+    if os.path.isfile(db):
+        conn = open_ro(db)
+        try:
+            robot_ids = {part.strip() for part in os.environ.get("SCRM_ROBOT_USERIDS", "").split(",") if part.strip()}
+            try:
+                employee_ids = [row["userid"] for row in conn.execute("SELECT userid FROM employee")]
+            except Exception:
+                employee_ids = []
+            local = local_context(conn, room_id, msg_id, at, minutes, employee_ids, robot_ids)
+        except Exception:
+            logging.exception("读取本地聊天上下文失败")
+            local = {"messages": [], "source": "local"}
+        finally:
+            conn.close()
+    if local.get("messages"):
+        local["source"] = "local"
+        return jsonify(local)
+    try:
+        payload = dict(stc_live.chat_context(ROOT, room_id, at, minutes, msg_id=msg_id) or {})
+        payload["source"] = "scrm"
+        return jsonify(payload)
+    except Exception:
+        logging.exception("拉取群聊上下文失败")
+        return jsonify({"error": "暂时取不到聊天记录，请稍后重试"}), 502
 
 
 @app.route("/api/timeout/events")

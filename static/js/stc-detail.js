@@ -61,9 +61,14 @@ window.stcKpiTag = function (name) {
         if (reason === '重复触发(同一消息)') return '<span class="sd-tag">同一消息另有规则命中</span>';
         return '<span class="sd-tag">不计入：' + esc(reason) + '</span>';
     }
+    function groupHref(roomId, msgId, day) {
+        var date = String(day || '').slice(0, 10);
+        return '/group/' + encodeURIComponent(roomId) + '?event=' + encodeURIComponent(msgId || '') +
+            '&start=' + encodeURIComponent(date) + '&end=' + encodeURIComponent(date);
+    }
     function eventItem(e) {
         return '<li class="sd-item" data-room="' + esc(e.room_id) + '" data-at="' + esc(e.created_at) + '" data-min="' + esc(e.minutes || 30) + '" data-msg="' + esc(e.msg_id) + '" data-name="' + esc(e.group_name) + '">' +
-            '<div class="sd-row"><button type="button" class="sd-link sd-title" data-act="members">' + esc(e.group_name || e.room_id) + '</button></div>' +
+            '<div class="sd-row"><a class="sd-link sd-title" href="' + esc(groupHref(e.room_id, e.msg_id, e.created_at)) + '">' + esc(e.group_name || e.room_id) + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a></div>' +
             '<div class="sd-row"><span>' + esc(e.created_at) + '</span><span class="sd-tag warn">' + esc(e.rule_name || '超时') + '</span>' + (window.stcKpiTag ? window.stcKpiTag(e.rule_name) : '') +
             (e.minutes ? '<span>超过 ' + esc(e.minutes) + ' 分钟未回复</span>' : '') +
             (e.exclude_reason ? excludeTag(e.exclude_reason) : '') + '</div>' +
@@ -88,7 +93,7 @@ window.stcKpiTag = function (name) {
             getJSON('/api/timeout/events?' + qs(p)).then(function (j) {
                 state.items = state.items.concat(j.events || []); state.offset = state.items.length;
                 if (!state.items.length) { bodyEl.innerHTML = '<div class="sd-empty">当前条件下暂无超时记录</div>'; return; }
-                bodyEl.innerHTML = '<p class="sd-sub">' + label + j.total + ' 条，按时间倒序。点群名看群成员，点「查看聊天上下文」看前后消息。</p><ul class="sd-list">' +
+                bodyEl.innerHTML = '<p class="sd-sub">' + label + j.total + ' 条，按时间倒序。点群名打开群详情，点「查看聊天上下文」看前后消息。</p><ul class="sd-list">' +
                     state.items.map(eventItem).join('') + '</ul>' +
                     (state.items.length < j.total ? '<div class="sd-more"><button type="button" class="sd-btn" data-act="more">加载更多（剩 ' + (j.total - state.items.length) + '）</button></div>' : '');
                 bodyEl._more = page;
@@ -99,18 +104,19 @@ window.stcKpiTag = function (name) {
     function members(roomId, name) {
         var render = function () {
             open((name || '群') + ' · 群成员', render); loading();
+            var detailLink = '<p class="sd-sub"><a class="sd-link" href="/group/' + encodeURIComponent(roomId) + '">打开群详情<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a></p>';
             getJSON('/api/group/' + encodeURIComponent(roomId) + '/members').then(function (j) {
                 var list = j.members || [];
-                if (!list.length) { bodyEl.innerHTML = '<div class="sd-empty">SCRM 未返回该群成员</div>'; return; }
+                if (!list.length) { bodyEl.innerHTML = detailLink + '<div class="sd-empty">SCRM 未返回该群成员</div>'; return; }
                 var cnt = { staff: 0, customer: 0, robot: 0 };
                 list.forEach(function (m) { cnt[m.role]++; });
-                bodyEl.innerHTML = '<p class="sd-sub">共 ' + list.length + ' 人：员工 ' + cnt.staff + ' · 客户 ' + cnt.customer + ' · 机器人 ' + cnt.robot + '（实时取自 SCRM，缓存 10 分钟）</p><ul class="sd-list">' +
+                bodyEl.innerHTML = detailLink + '<p class="sd-sub">共 ' + list.length + ' 人：员工 ' + cnt.staff + ' · 客户 ' + cnt.customer + ' · 机器人 ' + cnt.robot + '（实时取自 SCRM，缓存 10 分钟）</p><ul class="sd-list">' +
                     list.map(function (m) {
                         return '<li class="sd-item"><div class="sd-row"><span class="sd-title">' + esc(m.name) + '</span><span class="sd-tag ' + esc(m.role) + '">' + esc(m.role_label) + '</span>' +
                             (m.nick && m.nick !== m.name ? '<span>群昵称 ' + esc(m.nick) + '</span>' : '') + '</div>' +
                             '<div class="sd-row"><span>入群 ' + esc(m.join_time || '未知') + '</span>' + (m.join_scene ? '<span>' + esc(m.join_scene) + '</span>' : '') + '</div></li>';
                     }).join('') + '</ul>';
-            }).catch(function (e) { bodyEl.innerHTML = '<div class="sd-err">' + esc(e.message) + '</div>'; });
+            }).catch(function (e) { bodyEl.innerHTML = detailLink + '<div class="sd-err">' + esc(e.message) + '</div>'; });
         };
         render();
     }

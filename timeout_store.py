@@ -22,6 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_event_time ON timeout_event(created_at);
 CREATE INDEX IF NOT EXISTS idx_event_store ON timeout_event(store);
 CREATE INDEX IF NOT EXISTS idx_event_theater ON timeout_event(theater);
 CREATE INDEX IF NOT EXISTS idx_event_rule ON timeout_event(rule_id);
+CREATE INDEX IF NOT EXISTS idx_event_room ON timeout_event(room_id);
 
 CREATE TABLE IF NOT EXISTS timeout_rule (
   rule_id TEXT PRIMARY KEY,

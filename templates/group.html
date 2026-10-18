@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    {% include '_range_assets.html' %}
+    {% from '_range_picker.html' import picker with context %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>群详情{% if info and info.group_name %} · {{ info.group_name }}{% endif %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
+    <style>{{ ds_css()|safe }}</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=4">
+    <style>
+        .group-id { color: rgba(0,0,0,.45); font-size: 12px; overflow-wrap: anywhere; }
+        .summary-cards.group-metrics .value { font-size: 26px; }
+        .summary-cards.group-metrics .value.group-latest { font-size: 15px; font-weight: 500; }
+        .container .store-table-wrapper.ds-collapse { max-height: none; }
+        .store-table .group-context-row > td { background: #fafafa; padding: 0; text-align: left; font-weight: 400; color: rgba(0,0,0,.65); }
+        .group-context-box { padding: 10px 14px; }
+        .group-context-source { margin: 0 0 8px; color: rgba(0,0,0,.45); font-size: 12px; }
+        .event-highlight > td { background: #e6f4ff !important; }
+        .group-more { margin: 10px 0 2px; text-align: center; }
+        .group-more .filter-btn[hidden] { display: none; }
+    </style>
+</head>
+<body>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
+        {% set nav_active = 'coverage' %}
+        {% include '_nav.html' %}
+        <span class="cl-meta">群详情与超时明细</span>
+    </div></header>
+    <div class="container" {% if info %}data-group-room="{{ info.room_id }}"{% endif %}>
+        <header class="ant-page-header" data-ds-back="{{ back_href }}" data-ds-back-label="{{ back_label }}">
+            <div class="ant-page-header-heading">
+                <h1>{% if info %}{{ info.group_name or info.room_id }}{% else %}群详情{% endif %}</h1>
+                <div class="ant-page-header-sub">
+{% if info %}
+                    {% if info.store %}<a class="store-link" href="{{ back_href }}">{{ info.store }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}未归店{% endif %}
+                    · {{ info.theater or '未归战区' }}
+                    · 创建时间 {{ info.create_time|minute_time or '未知' }}
+                    · <span class="ant-tag{% if info.in_robot %} ant-tag-success{% endif %}">{{ '已拉机器人' if info.in_robot else '未拉机器人' }}</span>
+                    · <span class="group-id">群 ID：{{ info.room_id }}</span>
+{% endif %}
+                </div>
+            </div>
+        </header>
+
+{% if not info %}
+        <div class="no-data">
+            <div class="ant-empty">
+                <div class="ant-empty-image"><svg class="ai" aria-hidden="true"><use href="#i-inbox"/></svg></div>
+                <h2 class="ant-empty-title">没有这个群</h2>
+                <p class="ant-empty-desc">本地群数据和历史超时记录里都没有这个群，可能尚未同步或群 ID 有误。</p>
+                <p><a class="store-link" href="/">返回拉群覆盖<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a></p>
+            </div>
+        </div>
+{% else %}
+        <div class="summary-cards coverage-metrics group-metrics">
+            <div class="card">
+                <h4>计入 KPI 超时</h4>
+                <div class="stat-row">
+                    <span class="label">30 分钟规则 · 已剔除不计</span>
+                    <span class="value">{{ counts.kpi_counted }}</span>
+                </div>
+            </div>
+            <div class="card">
+                <h4>仅展示（不计 KPI）</h4>
+                <div class="stat-row">
+                    <span class="label">10 分钟规则</span>
+                    <span class="value">{{ counts.display_only }}</span>
+                </div>
+            </div>
+            <div class="card">
+                <h4>已剔除</h4>
+                <div class="stat-row">
+                    <span class="label">规则过滤 / LLM 复核</span>
+                    <span class="value">{{ counts.kpi_excluded }}</span>
+                </div>
+            </div>
+            <div class="card">
+                <h4>最近一次超时</h4>
+                <div class="stat-row">
+                    <span class="label">区间内</span>
+                    <span class="value group-latest">{{ latest or '—' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <form class="month-selector timeout-filters list-filters" method="get" action="{{ request.path }}">
+            {{ picker(start, end) }}
+            <button type="submit" class="filter-btn">查询</button>
+        </form>
+
+        <div class="store-table-wrapper ds-collapse" data-ds-title="计入 KPI 的超时" data-ds-count="{{ counts.kpi_counted }}">
+            <table class="store-table">
+                <thead><tr><th data-card-title>客户发言时间</th><th>规则</th><th>超时消息</th><th>操作</th></tr></thead>
+                <tbody>
+                    {% for e in groups.kpi_counted %}
+                    <tr data-msg="{{ e.msg_id }}">
+                        <td>{{ e.created_at }}</td>
+                        <td>{{ e.rule_name or '—' }}{{ e.rule_name|kpi_tag }}</td>
+                        <td class="cell-msg">{{ (e.content or '—')[:120] }}</td>
+                        <td><button type="button" class="sd-btn" data-ctx data-msg="{{ e.msg_id }}" data-at="{{ e.created_at }}" data-min="{{ e.minutes }}" aria-expanded="false">聊天上下文</button></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="cl-muted">当前区间没有计入 KPI 的超时</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="store-table-wrapper ds-collapse" data-ds-title="仅展示（不计 KPI）" data-ds-count="{{ counts.display_only }}">
+            <table class="store-table">
+                <thead><tr><th data-card-title>客户发言时间</th><th>规则</th><th>超时消息</th><th>操作</th></tr></thead>
+                <tbody>
+                    {% for e in groups.display_only %}
+                    <tr data-msg="{{ e.msg_id }}">
+                        <td>{{ e.created_at }}</td>
+                        <td>{{ e.rule_name or '—' }}{{ e.rule_name|kpi_tag }}</td>
+                        <td class="cell-msg">{{ (e.content or '—')[:120] }}</td>
+                        <td><button type="button" class="sd-btn" data-ctx data-msg="{{ e.msg_id }}" data-at="{{ e.created_at }}" data-min="{{ e.minutes }}" aria-expanded="false">聊天上下文</button></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="cl-muted">当前区间没有仅展示的超时</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="store-table-wrapper ds-collapse" data-ds-title="已剔除" data-ds-count="{{ counts.kpi_excluded }}">
+            <table class="store-table">
+                <thead><tr><th data-card-title>客户发言时间</th><th>规则</th><th>超时消息</th><th>剔除原因</th><th>操作</th></tr></thead>
+                <tbody>
+                    {% for e in groups.kpi_excluded %}
+                    <tr data-msg="{{ e.msg_id }}">
+                        <td>{{ e.created_at }}</td>
+                        <td>{{ e.rule_name or '—' }}{{ e.rule_name|kpi_tag }}</td>
+                        <td class="cell-msg">{{ (e.content or '—')[:120] }}</td>
+                        <td><span class="ant-tag">{{ e.reason or '—' }}</span></td>
+                        <td><button type="button" class="sd-btn" data-ctx data-msg="{{ e.msg_id }}" data-at="{{ e.created_at }}" data-min="{{ e.minutes }}" aria-expanded="false">聊天上下文</button></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="cl-muted">当前区间没有被剔除的超时</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="store-table-wrapper ds-collapse" id="group-members" data-ds-title="群成员" data-ds-count="—" data-room-id="{{ info.room_id }}">
+            <p class="cl-muted" data-members-hint>展开后加载群成员（实时取自 SCRM，缓存 10 分钟）。</p>
+            <div data-members-body></div>
+        </div>
+{% endif %}
+    </div>
+    <script>{{ ds_cards()|safe }}</script>
+    <script src="{{ url_for('static', filename='js/group.js') }}?v=2"></script>
+</body>
+</html>

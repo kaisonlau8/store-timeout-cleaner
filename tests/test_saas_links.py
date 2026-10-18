@@ -226,9 +226,17 @@ def test_score_detail_members_context_and_header_links(score_client):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
 
-    # 所在会话：有 room_id 时是成员按钮。
-    assert html.count('class="sd-link" data-sd-members="name:甲店客户群1"') == 2
-    assert 'data-sd-name="甲店客户群1" title="查看群成员"' in html
+    # 所在会话：有 room_id 时是群详情链接。
+    group_links = [html_lib.unescape(value) for value in re.findall(r'href="([^"]*/group/[^"]*)"', html)]
+    assert len(group_links) == 2
+    for link in group_links:
+        parts = urlsplit(link)
+        assert parts.path == "/group/" + quote("name:甲店客户群1", safe="")
+        params = parse_qs(parts.query)
+        assert params["start"] == [SCORE_START]
+        assert params["end"] == [SCORE_END]
+        assert params["event"]
+    assert "所在会话" in html
 
     # 两张表都有操作列表头，操作按钮带上下文 JSON。
     assert html.count("<th>操作</th>") == 2
@@ -370,7 +378,9 @@ def test_groups_page_assets_and_unmatched_room_ids(link_client):
 def test_groups_js_renders_links_and_clears_tables():
     source = _read("static/js/groups.js")
     assert '<a href="/store/' in source and "encodeURIComponent(row.store)" in source
-    assert 'class="sd-link"' in source and 'data-sd-members="' in source
+    assert 'class="sd-link"' in source and 'href="/group/' in source
+    assert "encodeURIComponent(row.room_id)" in source
+    assert 'data-sd-members="' not in source
     assert source.count("tbody.innerHTML = '';") >= 3
 
     script = r"""
@@ -434,8 +444,9 @@ async function settle() { for (let i = 0; i < 20; i += 1) await Promise.resolve(
   ));
   const unmatched = tbodies['#unmatched-table tbody'].innerHTML;
   assert(unmatched.includes('class="sd-link"'));
-  assert(unmatched.includes('data-sd-members="r2"'));
-  assert(unmatched.includes('data-sd-name="X700 未归店群"'));
+  assert(unmatched.includes('href="/group/r2"'));
+  assert(unmatched.includes('X700 未归店群'));
+  assert(!unmatched.includes('data-sd-members='));
 
   els['query-btn'].listeners.click();
   await settle();
@@ -569,8 +580,10 @@ console.log('ok');
 def test_static_asset_cache_versions_are_consistent():
     expected = {
         "stc-detail.css": "4",
-        "stc-detail.js": "5",
-        "groups.js": "4",
+        "stc-detail.js": "6",
+        "groups.js": "5",
+        "group.js": "2",
+        "store-page.js": "1",
         "timeout.js": "10",
     }
     templates = list((ROOT / "templates").glob("*.html"))

@@ -11,6 +11,7 @@ PAGES = (
     "templates/score.html",
     "templates/score_detail.html",
     "templates/coverage_store.html",
+    "templates/group.html",
 )
 
 
@@ -27,6 +28,7 @@ class NavMenuTests(unittest.TestCase):
             "templates/score.html": "score",
             "templates/score_detail.html": "score",
             "templates/coverage_store.html": "coverage",
+            "templates/group.html": "coverage",
         }
         for name in PAGES:
             html = read(name)
