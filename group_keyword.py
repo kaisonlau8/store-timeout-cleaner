@@ -128,3 +128,102 @@ def query_keyword_groups(
         "theaters": list_theaters(conn),
         "synced_at": None,  # 由 app 从 data.json updated_at 填充（与 chat_store 同一次同步写入）
     }
+
+
+class GroupListError(ValueError):
+    """非法的群目录分页/筛选参数。"""
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    try:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    except sqlite3.Error:
+        return set()
+
+
+def query_group_list(
+    conn: sqlite3.Connection,
+    q: str | None = None,
+    theater: str | None = None,
+    store: str | None = None,
+    robot: str | None = "all",
+    page: int | str | None = 1,
+    size: int | str | None = 50,
+) -> dict[str, Any]:
+    """群目录：按群名/群 ID、战区、门店、机器人状态筛选并分页。"""
+    try:
+        page_no = int(page if page not in (None, "") else 1)
+    except (TypeError, ValueError):
+        raise GroupListError("page 必须是正整数") from None
+    try:
+        page_size = int(size if size not in (None, "") else 50)
+    except (TypeError, ValueError):
+        raise GroupListError("size 必须是正整数") from None
+    if page_no < 1:
+        raise GroupListError("page 必须是正整数")
+    if page_size < 1:
+        raise GroupListError("size 必须是正整数")
+    page_size = min(page_size, 100)
+
+    keyword = str(q or "").strip()
+    theater = str(theater or "").strip()
+    store = str(store or "").strip()
+    robot = str(robot or "all").strip().lower()
+    if robot not in ("all", "1", "0"):
+        raise GroupListError("robot 只能是 all、1 或 0")
+
+    where: list[str] = []
+    params: list[Any] = []
+    if keyword:
+        where.append(
+            "(instr(lower(ifnull(group_name, '')), lower(?)) > 0 "
+            "OR instr(lower(ifnull(room_id, '')), lower(?)) > 0)"
+        )
+        params.extend([keyword, keyword])
+    if theater:
+        where.append("theater = ?")
+        params.append(theater)
+    if store:
+        where.append("instr(lower(ifnull(store, '')), lower(?)) > 0")
+        params.append(store)
+    if robot == "1":
+        where.append("in_robot = 1")
+    elif robot == "0":
+        where.append("in_robot = 0")
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+    cols = _table_columns(conn, "chat_store")
+    owner_name_col = "owner_name" if "owner_name" in cols else "NULL AS owner_name"
+    member_count_col = "member_count" if "member_count" in cols else "NULL AS member_count"
+    create_time_col = "create_time" if "create_time" in cols else "NULL AS create_time"
+    total = int(
+        conn.execute(f"SELECT COUNT(*) AS n FROM chat_store{where_sql}", params).fetchone()["n"] or 0
+    )
+    offset = (page_no - 1) * page_size
+    rows = [
+        {
+            "room_id": row["room_id"] or "",
+            "group_name": row["group_name"] or "",
+            "store": row["store"] or "",
+            "theater": row["theater"] or "",
+            "in_robot": int(row["in_robot"] or 0),
+            "owner_name": row["owner_name"],
+            "member_count": row["member_count"],
+            "create_time": row["create_time"] or "",
+        }
+        for row in conn.execute(
+            f"SELECT room_id, group_name, store, theater, in_robot, "
+            f"{owner_name_col}, {member_count_col}, {create_time_col} "
+            f"FROM chat_store{where_sql} "
+            "ORDER BY create_time DESC, room_id "
+            "LIMIT ? OFFSET ?",
+            [*params, page_size, offset],
+        )
+    ]
+    return {
+        "total": total,
+        "page": page_no,
+        "size": page_size,
+        "rows": rows,
+        "theaters": list_theaters(conn),
+    }

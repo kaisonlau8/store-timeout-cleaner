@@ -117,6 +117,7 @@ def sync_timeout_events(
     robot_chat_ids: list[str] | None = None,
     employee_ids: list[str] | None = None,
     group_rows: list[dict[str, Any]] | None = None,
+    employee_names: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     conn = connect(_db_path(root))
     try:
@@ -126,6 +127,7 @@ def sync_timeout_events(
                 robot_chat_ids=robot_chat_ids or [],
                 employee_ids=employee_ids or [],
                 group_rows=group_rows,
+                employee_names=employee_names or {},
             )
             conn.commit()
 

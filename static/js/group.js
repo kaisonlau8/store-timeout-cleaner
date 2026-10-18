@@ -32,7 +32,7 @@
             return html + '<div class="sd-empty">该时间段暂无聊天记录</div></div>';
         }
         html += messages.map(function (msg) {
-            var who = msg.role_label || msg.sender || roleLabel(msg.role);
+            var who = msg.sender || msg.role_label || roleLabel(msg.role);
             var when = String(msg.time || '');
             return '<div class="sd-msg role-' + esc(msg.role) + (msg.trigger ? ' trigger' : '') + '">' +
                 '<span class="who">' + esc(who) + '</span>' +

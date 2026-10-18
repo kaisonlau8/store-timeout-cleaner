@@ -22,7 +22,13 @@ from coverage_query import (
     load_directory,
     store_coverage_detail,
 )
-from group_keyword import KeywordError, open_ro, query_keyword_groups
+from group_keyword import (
+    GroupListError,
+    KeywordError,
+    open_ro,
+    query_group_list,
+    query_keyword_groups,
+)
 from group_query import group_events, group_info, local_context
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
@@ -88,6 +94,12 @@ def _release_sync_lock(lock_fh):
 
 
 def save_data(stats, summary):
+    # data.json 只保留汇总统计；同步结果里的明细和员工姓名不落盘。
+    summary = {
+        key: value
+        for key, value in (summary or {}).items()
+        if key not in {"all_rows", "filter_rows", "employee_names", "employee_ids", "robot_chat_ids"}
+    }
     data = {
         "updated_at": datetime.now(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S"),
         "stats": stats,
@@ -100,13 +112,14 @@ def save_data(stats, summary):
 
 
 def _save_group_context(result: dict) -> None:
-    conn = connect(os.path.join(ROOT, "timeout.db"))
+    conn = connect(_db_path())
     try:
         replace_context(
             conn,
             robot_chat_ids=result.get("robot_chat_ids") or [],
             employee_ids=result.get("employee_ids") or [],
             group_rows=result.get("all_rows") or [],
+            employee_names=result.get("employee_names") or {},
         )
         conn.commit()
     finally:
@@ -179,6 +192,12 @@ def _inject_kpi():
     except Exception:
         names = set()
     return {"non_kpi_names": sorted(names)}
+
+
+@app.template_filter("dept_leaf")
+def _dept_leaf(value):
+    parts = [part.strip() for part in str(value or "").split("/") if part.strip()]
+    return parts[-1] if parts else ""
 
 
 @app.template_filter("minute_time")
@@ -816,6 +835,43 @@ def _keyword_payload():
 @app.route("/groups")
 def groups_page():
     return render_template("groups.html")
+
+
+@app.route("/api/groups/list")
+def api_groups_list():
+    page_raw = request.args.get("page", "1")
+    size_raw = request.args.get("size", "50")
+    try:
+        page = int(page_raw if page_raw not in ("", None) else 1)
+        size = int(size_raw if size_raw not in ("", None) else 50)
+    except (TypeError, ValueError):
+        abort(400, description="page/size 必须是正整数")
+    if page < 1 or size < 1:
+        abort(400, description="page/size 必须是正整数")
+    size = min(size, 100)
+    robot = (request.args.get("robot") or "all").strip().lower()
+    if robot not in ("all", "1", "0"):
+        abort(400, description="robot 只能是 all、1 或 0")
+
+    db_path = _db_path()
+    if not os.path.isfile(db_path):
+        return jsonify({"total": 0, "page": page, "size": size, "rows": [], "theaters": []})
+    conn = open_ro(db_path)
+    try:
+        payload = query_group_list(
+            conn,
+            q=request.args.get("q") or "",
+            theater=request.args.get("theater") or "",
+            store=request.args.get("store") or "",
+            robot=robot,
+            page=page,
+            size=size,
+        )
+    except GroupListError as exc:
+        abort(400, description=str(exc))
+    finally:
+        conn.close()
+    return jsonify(payload)
 
 
 @app.route("/api/groups/keyword")

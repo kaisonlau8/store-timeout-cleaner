@@ -894,3 +894,59 @@ body {
 /* 计数紧贴标题（父级 gap 8px），只有右侧操作区 .ant-collapse-extra 继续靠右。 */
 .store-collapse > summary .store-count { margin-left: 0; }
 .store-collapse > summary .ant-collapse-extra { margin-left: auto; }
+
+/* ---- 群管理：群列表页签与分页 ---- */
+.groups-tabs {
+    margin-top: 0;
+}
+
+#groups-list-table td:last-child {
+    color: rgba(0,0,0,.65);
+    font-weight: 400;
+    text-align: left;
+    white-space: nowrap;
+}
+
+#groups-list-table td:first-child {
+    min-width: 180px;
+    overflow-wrap: anywhere;
+}
+
+#groups-list-table td:nth-child(2) {
+    min-width: 160px;
+}
+
+#groups-list-empty {
+    margin-top: 24px;
+}
+
+.groups-pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    margin: 16px 0 28px;
+    flex-wrap: wrap;
+}
+
+.groups-page-info {
+    font-size: 13px;
+    color: rgba(0,0,0,.45);
+}
+
+.groups-pager .sd-btn:disabled {
+    color: rgba(0,0,0,.25);
+    border-color: #f0f0f0;
+    background: #fafafa;
+    cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+    .groups-pager {
+        justify-content: center;
+    }
+    .groups-pager .sd-btn {
+        min-height: 40px;
+        min-width: 88px;
+    }
+}

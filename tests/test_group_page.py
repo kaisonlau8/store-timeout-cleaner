@@ -172,6 +172,10 @@ def test_group_info_uses_store_row_falls_back_and_returns_none(tmp_path):
             "theater": "华东战区",
             "create_time": "2026-05-01T00:00:00+08:00",
             "in_robot": 1,
+            "owner_id": None,
+            "owner_name": None,
+            "owner_dept": None,
+            "member_count": None,
         }
 
         conn.execute("DELETE FROM chat_store")

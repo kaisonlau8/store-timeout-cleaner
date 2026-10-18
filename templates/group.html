@@ -44,6 +44,8 @@
 {% if info %}
                     {% if info.store %}<a class="store-link" href="{{ back_href }}">{{ info.store }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}未归店{% endif %}
                     · {{ info.theater or '未归战区' }}
+                    · 群主 {% if info.owner_name %}{{ info.owner_name }}{% if info.owner_dept %}（{{ info.owner_dept|dept_leaf }}）{% endif %}{% else %}未同步{% endif %}
+                    · 群人数 {% if info.member_count is not none %}{{ info.member_count }}{% else %}未同步{% endif %}
                     · 创建时间 {{ info.create_time|minute_time or '未知' }}
                     · <span class="ant-tag{% if info.in_robot %} ant-tag-success{% endif %}">{{ '已拉机器人' if info.in_robot else '未拉机器人' }}</span>
                     · <span class="group-id">群 ID：{{ info.room_id }}</span>
@@ -160,6 +162,6 @@
 {% endif %}
     </div>
     <script>{{ ds_cards()|safe }}</script>
-    <script src="{{ url_for('static', filename='js/group.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/group.js') }}?v=3"></script>
 </body>
 </html>

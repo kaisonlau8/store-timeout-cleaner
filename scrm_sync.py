@@ -277,4 +277,10 @@ def sync_from_scrm(root: str) -> dict[str, Any]:
         },
         "robot_chat_ids": sorted(robot_chat_ids),
         "employee_ids": sorted(user_by_id.keys()),
+        # 只供 replace_context 写 employee.name；data.json 只存 stats/summary，不落盘本字段。
+        "employee_names": {
+            userid: (user.get("username") or "").strip()
+            for userid, user in user_by_id.items()
+            if userid
+        },
     }
