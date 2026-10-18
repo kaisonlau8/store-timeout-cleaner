@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tbody.innerHTML = rows.map((row, idx) => {
             const theater = row.theater
-                ? '<td data-label="战区" data-cards-full><button type="button" class="theater-chip" data-theater="' + escapeHtml(row.theater) + '" title="点击按该战区筛选">' + escapeHtml(row.theater) + '</button></td>'
+                ? '<td data-label="战区"><button type="button" class="theater-chip" data-theater="' + escapeHtml(row.theater) + '" title="点击按该战区筛选">' + escapeHtml(row.theater) + '</button></td>'
                 : '<td data-label="战区"><span class="cl-muted">—</span></td>';
             const store = row.store
                 ? '<a href="/store/' + encodeURIComponent(row.store) + '">' + escapeHtml(row.store) + '</a>'

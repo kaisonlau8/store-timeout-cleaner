@@ -498,20 +498,24 @@ def test_groups_list_js_uses_spin_replace_state_and_links(directory_client):
 def test_groups_list_responsive_fixes_are_scoped_and_versioned(directory_client):
     client, _, _ = directory_client
     html = client.get("/groups").get_data(as_text=True)
-    assert "css/groups-list.css?v=1" in html
+    assert "css/groups-list.css?v=2" in html
     assert "js/groups-list.js?v=3" in html
+    assert "js/groups.js?v=7" in html
 
     css = (ROOT / "static" / "css" / "groups-list.css").read_text(encoding="utf-8")
     assert "#groups-list-table-wrap" in css
     assert "max-height: none" in css
     assert "overflow: auto" in css
-    assert '[data-label="机器人"] .ant-tag' in css
-    assert "justify-self: start" in css
-    assert '[data-label="门店"][data-cards-full]' in css
-    assert "display: grid !important" in css
     assert "flex-wrap: nowrap" in css
     assert "text-overflow: ellipsis" in css
+    # 卡片「标签左、值右」由设计系统统一处理，应用不再局部覆盖卡片单元格
+    assert "data-label" not in css
+    assert "data-cards-full" not in css
+    assert "display: grid !important" not in css
 
     source = (ROOT / "static" / "js" / "groups-list.js").read_text(encoding="utf-8")
     assert "(max-width: 860px)" in source
     assert "页 · ' + total + ' 个群" in source
+
+    groups_js = (ROOT / "static" / "js" / "groups.js").read_text(encoding="utf-8")
+    assert "data-cards-full" not in groups_js
