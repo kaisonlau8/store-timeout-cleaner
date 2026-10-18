@@ -31,6 +31,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="分层 SCRM 同步")
     parser.add_argument("tier", choices=TIERS)
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不请求 SCRM")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="忽略启动黑名单（00:00/08:30/09:00/12:00 ±5 分钟）；运行中仍会避让 00:00/12:00",
+    )
     args = parser.parse_args()
 
     if args.dry_run:
@@ -38,13 +43,16 @@ def main() -> int:
         return 0
 
     try:
-        result = run_tier(args.tier, root=ROOT)
+        result = run_tier(args.tier, root=ROOT, force=args.force)
     except Exception as exc:
         logging.error("%s 同步失败: %s", args.tier, _redact(exc))
         return 1
 
     if result.get("status") == "skip":
-        logging.info("%s 跳过：上一轮仍在运行", args.tier)
+        if result.get("reason") == "blackout":
+            logging.info("%s 跳过：处于启动黑名单（可用 --force 手动覆盖）", args.tier)
+        else:
+            logging.info("%s 跳过：上一轮仍在运行", args.tier)
         return 0
 
     counts = result.get("counts") or {}

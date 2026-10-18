@@ -49,6 +49,8 @@ DEFAULT_BACKOFF_CAP = 60.0
 DEFAULT_SLOW_THRESHOLD = 2.0
 DEFAULT_SLOW_CAP = 30.0
 SYNC_LOCK_TIMEOUT = 120.0
+DEFAULT_MAX_SECONDS = {"groups": 900.0, "full": 900.0, "members": 10800.0}
+DEFAULT_FULL_MIN_RATIO = 0.95
 
 TIERS = ("groups", "members", "full")
 TIER_LOCKS = {"groups": "groups", "members": "members", "full": "groups"}
@@ -61,6 +63,8 @@ TIER_SCHEDULE: dict[str, tuple[str, ...]] = {
 }
 BLACKOUT_TIMES = ("00:00", "08:30", "09:00", "12:00")
 BLACKOUT_MINUTES = 5
+# 运行中的请求/写库只避让原任务的 00:00 / 12:00；启动时还避让 08:30 / 09:00。
+RUNTIME_BLACKOUT_TIMES = ("00:00", "12:00")
 
 
 class ScrmTierError(RuntimeError):
@@ -107,6 +111,22 @@ def _tier_limit() -> int | None:
     return value if value > 0 else None
 
 
+def _tier_max_seconds(tier: str) -> float:
+    default = DEFAULT_MAX_SECONDS.get(tier, 900.0)
+    raw = os.environ.get("SCRM_TIER_MAX_SECONDS", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _full_min_ratio() -> float:
+    value = _env_float("SCRM_FULL_MIN_RATIO", DEFAULT_FULL_MIN_RATIO)
+    return max(0.0, min(1.0, value))
+
+
 def _timeout_db_path(root: str) -> str:
     return os.environ.get("CLEANER_DB_PATH") or os.path.join(root, "timeout.db")
 
@@ -125,16 +145,34 @@ def _metrics_path() -> str:
     return os.path.expanduser(value)
 
 
+def _shanghai_now() -> datetime:
+    return datetime.now(SHANGHAI)
+
+
 def _now_iso() -> str:
-    return datetime.now(SHANGHAI).isoformat(timespec="seconds")
+    return _shanghai_now().isoformat(timespec="seconds")
 
 
-_SECRET_RE = re.compile(r"(?i)(access_token|app_secret|secret|password)=([^&\s]+)")
+_SECRET_KEY_PATTERN = (
+    r"[A-Za-z0-9_.-]*(?:token|secret)[A-Za-z0-9_.-]*"
+    r"|app_?id|app_?secret|password"
+)
+_JSON_SECRET_RE = re.compile(
+    rf'(?i)(["\'](?:{_SECRET_KEY_PATTERN})["\']\s*:\s*)'
+    r'(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|null|true|false|-?\d+(?:\.\d+)?)'
+)
+_KV_SECRET_RE = re.compile(
+    rf"(?i)((?:^|(?<=[^A-Za-z0-9_.-]))(?:{_SECRET_KEY_PATTERN})\s*=\s*)"
+    r'(?:"[^"]*"|\'[^\']*\'|[^&\s,;]+)'
+)
 
 
 def _redact(text: Any) -> str:
-    """日志/异常里的凭证脱敏；不打印完整请求 URL。"""
-    return _SECRET_RE.sub(r"\1=***", str(text or ""))
+    """日志/异常里的凭证脱敏；覆盖 key=value 与 JSON 两种形式。"""
+    value = str(text or "")
+    value = _JSON_SECRET_RE.sub(lambda match: match.group(1) + '"***"', value)
+    value = _KV_SECRET_RE.sub(lambda match: match.group(1) + "***", value)
+    return value
 
 
 def _hm_to_minutes(hm: str | int) -> int:
@@ -170,6 +208,71 @@ def blackout_ok(hm: str | int) -> bool:
     return True
 
 
+def _runtime_blackout_remaining(now: datetime | None = None) -> float:
+    """运行中黑名单剩余秒数；仅 00:00 / 12:00 前后 5 分钟。"""
+    current = now or _shanghai_now()
+    seconds = (
+        current.hour * 3600
+        + current.minute * 60
+        + current.second
+        + current.microsecond / 1_000_000.0
+    )
+    window = BLACKOUT_MINUTES * 60
+    remaining = 0.0
+    for center in RUNTIME_BLACKOUT_TIMES:
+        center_seconds = _hm_to_minutes(center) * 60
+        diff = abs(seconds - center_seconds)
+        diff = min(diff, 86400.0 - diff)
+        if diff <= window:
+            remaining = max(remaining, window - diff + 0.001)
+    return remaining
+
+
+def _check_deadline(deadline: float | None, label: str = "") -> None:
+    if deadline is None:
+        return
+    if time.monotonic() >= deadline:
+        prefix = f"{label} " if label else ""
+        raise ScrmTierError(
+            f"{prefix}超过最大运行时间（SCRM_TIER_MAX_SECONDS），已中止且未发布"
+        )
+
+
+def _wait_runtime_blackout(
+    deadline: float | None = None,
+    *,
+    label: str = "",
+    sleep: Callable[[float], None] | None = None,
+    clock: Callable[[], float] | None = None,
+) -> None:
+    """在 00:00/12:00 前后 5 分钟主动等待，绝不占用 .sync.lock。"""
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
+    prefix = f"{label} " if label else ""
+    while True:
+        delay = _runtime_blackout_remaining()
+        if delay <= 0:
+            return
+        if deadline is not None and clock() >= deadline:
+            raise ScrmTierError(
+                f"{prefix}超过最大运行时间（SCRM_TIER_MAX_SECONDS），已中止且未发布"
+            )
+        if deadline is not None and clock() + delay >= deadline:
+            raise ScrmTierError(
+                f"{prefix}等待运行时黑名单将超过最大运行时间，已中止且未发布"
+            )
+        log.info(
+            "SCRM 运行时黑名单（00:00/12:00 ±%s 分钟），等待 %.1fs",
+            BLACKOUT_MINUTES,
+            delay,
+        )
+        sleep(delay)
+
+
+def _in_start_blackout(now: datetime | None = None) -> bool:
+    return not blackout_ok(now or _shanghai_now())
+
+
 def simulate_day() -> list[tuple[str, str]]:
     """模拟一天 1440 分钟，返回 (HH:MM, tier)，黑名单窗口内不启动。"""
     by_time = {
@@ -203,12 +306,26 @@ def plan_for_tier(tier: str, root: str | None = None) -> dict[str, Any]:
         "concurrency": _concurrency_from_env(),
         "min_interval": _interval_from_env(),
         "tier_limit": _tier_limit(),
+        "max_seconds": _tier_max_seconds(tier),
+        "full_min_ratio": _full_min_ratio(),
     }
 
 
 # ---------------------------------------------------------------------------
 # 限流客户端
 # ---------------------------------------------------------------------------
+
+
+def _net_lock_paths(root: str | None, concurrency: int) -> list[str]:
+    """跨进程节流槽位文件；并发 1 用单文件，并发 2 用两个槽位。"""
+    if not root:
+        return []
+    if int(concurrency) > 1:
+        return [
+            os.path.join(root, f".scrm-net.{index}.lock")
+            for index in range(min(HARD_MAX_CONCURRENCY, int(concurrency)))
+        ]
+    return [os.path.join(root, ".scrm-net.lock")]
 
 
 class ThrottledScrmClient(ScrmClient):
@@ -236,6 +353,9 @@ class ThrottledScrmClient(ScrmClient):
         rng: Any | None = None,
         clock: Callable[[], float] | None = None,
         sleep: Callable[[float], None] | None = None,
+        wall_clock: Callable[[], float] | None = None,
+        root: str | None = None,
+        deadline: float | None = None,
     ):
         super().__init__(base_url, app_id, app_secret, timeout=timeout)
         if concurrency is None:
@@ -255,6 +375,10 @@ class ThrottledScrmClient(ScrmClient):
         self._rng = rng or random.Random()
         self._clock = clock or time.monotonic
         self._sleep = sleep or time.sleep
+        self._wall_clock = wall_clock or time.time
+        self._root = os.path.abspath(root) if root else None
+        self._deadline = deadline
+        self._net_paths = _net_lock_paths(self._root, self.concurrency) if self._root else []
 
         self._semaphore = threading.BoundedSemaphore(self.concurrency)
         self._pace_lock = threading.Lock()
@@ -269,6 +393,15 @@ class ThrottledScrmClient(ScrmClient):
         self._retries = 0
         self._errors: dict[str, int] = {}
         self._latencies: list[float] = []
+
+    def set_deadline(self, deadline: float | None) -> None:
+        self._deadline = deadline
+
+    def _check_deadline(self) -> None:
+        if self._deadline is not None and self._clock() >= self._deadline:
+            raise ScrmTierError(
+                "SCRM 请求 超过最大运行时间（SCRM_TIER_MAX_SECONDS），已中止且未发布"
+            )
 
     # -- token：并发下也只取一次 ------------------------------------------
     def access_token(self) -> str:
@@ -335,11 +468,11 @@ class ThrottledScrmClient(ScrmClient):
         return self.metrics()
 
     # -- 节流 / 自适应降速 --------------------------------------------------
-    def _pace(self) -> None:
+    def _pace(self, *, include_interval: bool = True) -> None:
         with self._pace_lock:
             now = self._clock()
-            base = self.min_interval
-            jitter = self._rng.uniform(0.0, base * self.jitter_ratio)
+            base = self.min_interval if include_interval else 0.0
+            jitter = self._rng.uniform(0.0, base * self.jitter_ratio) if base else 0.0
             earliest = now
             if self._last_start is not None:
                 earliest = max(earliest, self._last_start + base + jitter)
@@ -348,6 +481,10 @@ class ThrottledScrmClient(ScrmClient):
             delay = max(0.0, earliest - now)
             self._last_start = earliest
         if delay > 0:
+            if self._deadline is not None and now + delay >= self._deadline:
+                raise ScrmTierError(
+                    "SCRM 请求 等待节流将超过最大运行时间，已中止且未发布"
+                )
             self._sleep(delay)
 
     def _note_latency(self, latency: float) -> None:
@@ -362,6 +499,109 @@ class ThrottledScrmClient(ScrmClient):
         if ceiling <= 0:
             return 0.0
         return self._rng.uniform(0.0, ceiling)
+
+    def _retry_delay(self, attempt: int, exc: BaseException) -> float:
+        """429/503 优先使用 Retry-After（秒），最多 120 秒。"""
+        if isinstance(exc, urllib.error.HTTPError) and int(exc.code) in (429, 503):
+            headers = getattr(exc, "headers", None)
+            raw = headers.get("Retry-After") if headers is not None else None
+            if raw in (None, "") and headers is not None:
+                raw = headers.get("retry-after")
+            if raw not in (None, ""):
+                try:
+                    seconds = float(str(raw).strip())
+                except (TypeError, ValueError):
+                    seconds = None
+                if seconds is not None:
+                    return min(120.0, max(0.0, seconds))
+        return self._backoff_delay(attempt)
+
+    # -- 跨进程网络槽位（flock + 最近一次请求起始时间） ---------------------
+    @contextmanager
+    def _net_slot(self):
+        if not self._net_paths:
+            yield None
+            return
+        os.makedirs(self._root or ".", exist_ok=True)
+        while True:
+            self._check_deadline()
+            for path in self._net_paths:
+                fh = open(path, "a+", encoding="utf-8")
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    fh.close()
+                    continue
+                try:
+                    yield fh
+                finally:
+                    try:
+                        fcntl.flock(fh, fcntl.LOCK_UN)
+                    finally:
+                        fh.close()
+                return
+            if self._deadline is not None:
+                self._check_deadline()
+            self._sleep(0.05)
+
+    def _wait_net_turn(self, fh) -> None:
+        if fh is None:
+            return
+        fh.seek(0)
+        raw = fh.read().strip()
+        try:
+            last_start = float(raw) if raw else 0.0
+        except (TypeError, ValueError):
+            last_start = 0.0
+        now = self._wall_clock()
+        jitter = self._rng.uniform(0.0, self.min_interval * self.jitter_ratio)
+        target = last_start + self.min_interval + jitter
+        delay = max(0.0, target - now)
+        if delay > 0:
+            if (
+                self._deadline is not None
+                and self._clock() + delay >= self._deadline
+            ):
+                raise ScrmTierError(
+                    "SCRM 请求 等待跨进程节流将超过最大运行时间，已中止且未发布"
+                )
+            self._sleep(delay)
+
+    def _mark_net_start(self, fh) -> None:
+        if fh is None:
+            return
+        fh.seek(0)
+        fh.truncate()
+        fh.write(f"{self._wall_clock():.6f}")
+        fh.flush()
+
+    @contextmanager
+    def _attempt_slot(self):
+        """等待黑名单/节流后占用网络槽位，yield 本次请求的 started 时间。"""
+        self._check_deadline()
+        _wait_runtime_blackout(
+            self._deadline,
+            label="SCRM 请求",
+            sleep=self._sleep,
+            clock=self._clock,
+        )
+        self._pace(include_interval=not self._net_paths)
+        self._check_deadline()
+        with self._net_slot() as fh:
+            if fh is not None:
+                self._wait_net_turn(fh)
+                # 等待跨进程槽位期间可能进入黑名单。
+                _wait_runtime_blackout(
+                    self._deadline,
+                    label="SCRM 请求",
+                    sleep=self._sleep,
+                    clock=self._clock,
+                )
+            self._check_deadline()
+            started = self._clock()
+            self._record_request()
+            self._mark_net_start(fh)
+            yield started
 
     # -- 单次 HTTP 请求（可被子类/测试替换） -------------------------------
     def _send_http(
@@ -403,13 +643,18 @@ class ThrottledScrmClient(ScrmClient):
             last_exc: BaseException | None = None
             last_kind = "unknown"
             for attempt in range(1, self.max_attempts + 1):
-                self._pace()
-                started = self._clock()
-                self._record_request()
+                started: float | None = None
                 try:
-                    payload = self._send_http(url, data, headers, method)
+                    with self._attempt_slot() as started:
+                        payload = self._send_http(url, data, headers, method)
+                except ScrmTierError:
+                    raise
                 except Exception as exc:  # noqa: BLE001 - 按类型分类后重试
-                    latency = max(0.0, self._clock() - started)
+                    latency = (
+                        max(0.0, self._clock() - started)
+                        if started is not None
+                        else 0.0
+                    )
                     self._record_latency(latency)
                     self._note_latency(latency)
                     kind = _error_kind(exc)
@@ -420,7 +665,7 @@ class ThrottledScrmClient(ScrmClient):
                             f"请求失败 {method} {path} ({kind}): {_redact(exc)}"
                         ) from exc
                     self._record_retry()
-                    delay = self._backoff_delay(attempt)
+                    delay = self._retry_delay(attempt, exc)
                     log.warning(
                         "SCRM 请求重试 %s %s 第 %s/%s 次，%s 后重试 (%s)",
                         method,
@@ -430,6 +675,13 @@ class ThrottledScrmClient(ScrmClient):
                         f"{delay:.2f}s",
                         kind,
                     )
+                    if (
+                        self._deadline is not None
+                        and self._clock() + delay >= self._deadline
+                    ):
+                        raise ScrmTierError(
+                            "SCRM 请求 重试等待将超过最大运行时间，已中止且未发布"
+                        )
                     self._sleep(delay)
                     continue
 
@@ -498,6 +750,7 @@ def make_throttled_client(root: str, **kwargs: Any) -> ThrottledScrmClient:
     app_secret = os.environ.get("SCRM_APP_SECRET", "").strip()
     if not base_url or not app_id or not app_secret:
         raise ScrmError("缺少 SCRM_BASE_URL / SCRM_APP_ID / SCRM_APP_SECRET，请配置 .env")
+    kwargs.setdefault("root", root)
     return ThrottledScrmClient(base_url, app_id, app_secret, **kwargs)
 
 
@@ -560,9 +813,23 @@ def _release_tier_lock(fh) -> None:
         fh.close()
 
 
-def _timeout_transaction(root: str, fn: Callable[[sqlite3.Connection], Any]) -> Any:
-    """在 .sync.lock 内执行一次 timeout.db 写事务。"""
+def _timeout_transaction(
+    root: str,
+    fn: Callable[[sqlite3.Connection], Any],
+    *,
+    deadline: float | None = None,
+    label: str = "",
+) -> Any:
+    """在 .sync.lock 内执行一次 timeout.db 写事务。
+
+    00:00 / 12:00 前后 5 分钟先等待，且等待期间绝不持有 .sync.lock，
+    保证原任务的非阻塞取锁永远看到空闲。
+    """
+    _check_deadline(deadline, label)
+    _wait_runtime_blackout(deadline, label=label)
+    _check_deadline(deadline, label)
     with sync_lock(root):
+        _check_deadline(deadline, label)
         conn = timeout_store.connect(_timeout_db_path(root))
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -575,6 +842,46 @@ def _timeout_transaction(root: str, fn: Callable[[sqlite3.Connection], Any]) -> 
             return result
         finally:
             conn.close()
+
+
+def _read_chat_store_ids(root: str) -> set[str]:
+    """短读 chat_store（不取 .sync.lock），用于发布时的竞态过滤。"""
+    conn = timeout_store.connect(_timeout_db_path(root))
+    try:
+        return {
+            str(row["room_id"])
+            for row in conn.execute("SELECT room_id FROM chat_store")
+            if row["room_id"]
+        }
+    finally:
+        conn.close()
+
+
+def _read_employee_ids(root: str) -> list[str]:
+    conn = timeout_store.connect(_timeout_db_path(root))
+    try:
+        return [
+            str(row["userid"])
+            for row in conn.execute("SELECT userid FROM employee ORDER BY userid")
+            if row["userid"]
+        ]
+    finally:
+        conn.close()
+
+
+def _read_chat_snapshot(root: str) -> dict[str, Any]:
+    """短读 chat_store / robot_chat 的当前规模。"""
+    conn = timeout_store.connect(_timeout_db_path(root))
+    try:
+        chat_rows = int(conn.execute("SELECT COUNT(*) FROM chat_store").fetchone()[0])
+        robot_rows = [
+            str(row["room_id"])
+            for row in conn.execute("SELECT room_id FROM robot_chat")
+            if row["room_id"]
+        ]
+        return {"chat_rows": chat_rows, "robot_rows": robot_rows}
+    finally:
+        conn.close()
 
 
 def _store_last_run(root: str, tier: str, payload: dict[str, Any]) -> None:
@@ -705,8 +1012,15 @@ def _cache_replace(
     path: str,
     member_rows: Iterable[dict[str, Any]],
     follow_rows: Iterable[dict[str, Any]],
+    *,
+    member_units: Iterable[str] | None = None,
+    follow_units: Iterable[str] | None = None,
 ) -> None:
-    """先写 staging，再在一个事务里整表替换两张主表。"""
+    """先写 staging，再在一个事务里替换主表。
+
+    member_units / follow_units 为 None 时整表替换；给出时只替换这些 unit，
+    其余 unit 的行保持不变（SCRM_TIER_LIMIT 的增量模式）。
+    """
     members = _dedupe(
         (tuple(row.get(col) for col in GROUP_MEMBER_COLUMNS) for row in member_rows),
         key_size=2,
@@ -714,6 +1028,12 @@ def _cache_replace(
     follows = _dedupe(
         (tuple(row.get(col) for col in FOLLOW_COLUMNS) for row in follow_rows),
         key_size=2,
+    )
+    member_unit_ids = (
+        None if member_units is None else sorted({str(unit) for unit in member_units if unit})
+    )
+    follow_unit_ids = (
+        None if follow_units is None else sorted({str(unit) for unit in follow_units if unit})
     )
     placeholders = ", ".join("?" for _ in GROUP_MEMBER_COLUMNS)
     follow_placeholders = ", ".join("?" for _ in FOLLOW_COLUMNS)
@@ -741,8 +1061,20 @@ def _cache_replace(
 
         conn.execute("BEGIN IMMEDIATE")
         try:
-            conn.execute("DELETE FROM scrm_group_member")
-            conn.execute("DELETE FROM scrm_follow")
+            if member_unit_ids is None:
+                conn.execute("DELETE FROM scrm_group_member")
+            else:
+                conn.executemany(
+                    "DELETE FROM scrm_group_member WHERE chat_id = ?",
+                    [(unit,) for unit in member_unit_ids],
+                )
+            if follow_unit_ids is None:
+                conn.execute("DELETE FROM scrm_follow")
+            else:
+                conn.executemany(
+                    "DELETE FROM scrm_follow WHERE userid = ?",
+                    [(unit,) for unit in follow_unit_ids],
+                )
             conn.execute(
                 f"INSERT INTO scrm_group_member({member_cols}) "
                 f"SELECT {member_cols} FROM scrm_group_member_staging"
@@ -760,6 +1092,57 @@ def _cache_replace(
                 os.chmod(path, 0o600)
             except OSError:
                 pass
+    finally:
+        conn.close()
+
+
+def _cache_live_counts(
+    path: str,
+) -> tuple[dict[str, int], dict[str, int], int, int]:
+    """读取当前缓存里每个 unit 的旧行数，供失败加权/失败沿用判断。"""
+    if path != ":memory:" and not os.path.exists(path):
+        return {}, {}, 0, 0
+    conn = _cache_connect(path)
+    try:
+        member_counts = {
+            str(row["chat_id"]): int(row["n"])
+            for row in conn.execute(
+                "SELECT chat_id, COUNT(*) AS n FROM scrm_group_member GROUP BY chat_id"
+            )
+        }
+        follow_counts = {
+            str(row["userid"]): int(row["n"])
+            for row in conn.execute(
+                "SELECT userid, COUNT(*) AS n FROM scrm_follow GROUP BY userid"
+            )
+        }
+        member_total = int(
+            conn.execute("SELECT COUNT(*) FROM scrm_group_member").fetchone()[0]
+        )
+        follow_total = int(
+            conn.execute("SELECT COUNT(*) FROM scrm_follow").fetchone()[0]
+        )
+        return member_counts, follow_counts, member_total, follow_total
+    finally:
+        conn.close()
+
+
+def _cache_live_rows(path: str, table: str, key_col: str, value: str) -> list[dict[str, Any]]:
+    """读取某个失败 unit 在旧缓存里的行，原样回填 staging。"""
+    if table not in ("scrm_group_member", "scrm_follow"):
+        raise ValueError(f"非法缓存表: {table}")
+    if key_col not in ("chat_id", "userid"):
+        raise ValueError(f"非法缓存键: {key_col}")
+    if path != ":memory:" and not os.path.exists(path):
+        return []
+    conn = _cache_connect(path)
+    try:
+        return [
+            dict(row)
+            for row in conn.execute(
+                f"SELECT * FROM {table} WHERE {key_col} = ?", (value,)
+            )
+        ]
     finally:
         conn.close()
 
@@ -888,24 +1271,43 @@ def _group_ids(rows: Iterable[dict[str, Any]]) -> set[str]:
     }
 
 
-def _run_groups_tier(root: str, client: ScrmClient) -> dict[str, Any]:
+def _run_groups_tier(
+    root: str,
+    client: ScrmClient,
+    deadline: float | None = None,
+) -> dict[str, Any]:
     result = sync_from_scrm(root, client=client)
+    _check_deadline(deadline, "groups 层")
     rows = [row for row in (result.get("all_rows") or []) if row.get("group_id")]
     robot_ids = [str(cid) for cid in (result.get("robot_chat_ids") or []) if cid]
+    robot_set = set(robot_ids)
     employee_names = result.get("employee_names") or {}
 
     def write(conn: sqlite3.Connection) -> dict[str, Any]:
         existing = {
-            row["room_id"]: row["group_name"]
-            for row in conn.execute("SELECT room_id, group_name FROM chat_store")
+            row["room_id"]: dict(row)
+            for row in conn.execute(
+                "SELECT room_id, store, theater, group_name, create_time, in_robot, "
+                "owner_id, owner_name, owner_dept, member_count FROM chat_store"
+            )
         }
         new_groups = 0
         renamed = 0
+        updated = 0
         for row in rows:
             room_id = str(row.get("group_id") or "").strip()
             if not room_id:
                 continue
             group_name = row.get("group_name") or ""
+            desired = {
+                "group_name": group_name,
+                "owner_id": row.get("owner_id") or None,
+                "owner_name": row.get("owner") or None,
+                "owner_dept": row.get("dept") or None,
+                "store": row.get("store") or "",
+                "theater": row.get("theater") or "",
+                "member_count": _int_or_none(row.get("member_count")),
+            }
             if room_id not in existing:
                 conn.execute(
                     """
@@ -916,47 +1318,82 @@ def _run_groups_tier(root: str, client: ScrmClient) -> dict[str, Any]:
                     """,
                     (
                         room_id,
-                        row.get("store") or "",
-                        row.get("theater") or "",
+                        desired["store"],
+                        desired["theater"],
                         group_name,
                         row.get("create_time") or None,
-                        1 if room_id in set(robot_ids) else 0,
-                        row.get("owner_id") or None,
-                        row.get("owner") or None,
-                        row.get("dept") or None,
-                        _int_or_none(row.get("member_count")),
+                        1 if room_id in robot_set else 0,
+                        desired["owner_id"],
+                        desired["owner_name"],
+                        desired["owner_dept"],
+                        desired["member_count"],
                     ),
                 )
                 new_groups += 1
-                existing[room_id] = group_name
-            elif (existing.get(room_id) or "") != group_name:
-                conn.execute(
-                    """
-                    UPDATE chat_store SET
-                      group_name = ?, owner_id = ?, owner_name = ?, owner_dept = ?,
-                      store = ?, theater = ?, member_count = ?
-                    WHERE room_id = ?
-                    """,
-                    (
-                        group_name,
-                        row.get("owner_id") or None,
-                        row.get("owner") or None,
-                        row.get("dept") or None,
-                        row.get("store") or "",
-                        row.get("theater") or "",
-                        _int_or_none(row.get("member_count")),
-                        room_id,
-                    ),
-                )
-                renamed += 1
-                existing[room_id] = group_name
+                existing[room_id] = {**desired, "in_robot": 1 if room_id in robot_set else 0}
+                continue
 
-        before = conn.total_changes
-        for room_id in sorted(set(robot_ids)):
+            old = existing[room_id]
+            changed = False
+            for key, value in desired.items():
+                old_value = old.get(key)
+                if key in ("owner_id", "owner_name", "owner_dept"):
+                    old_value = old_value or None
+                elif key in ("store", "theater", "group_name"):
+                    old_value = old_value or ""
+                if old_value != value:
+                    changed = True
+                    break
+            if not changed:
+                continue
+
             conn.execute(
-                "INSERT OR IGNORE INTO robot_chat(room_id) VALUES (?)", (room_id,)
+                """
+                UPDATE chat_store SET
+                  group_name = ?, owner_id = ?, owner_name = ?, owner_dept = ?,
+                  store = ?, theater = ?, member_count = ?
+                WHERE room_id = ?
+                """,
+                (
+                    group_name,
+                    desired["owner_id"],
+                    desired["owner_name"],
+                    desired["owner_dept"],
+                    desired["store"],
+                    desired["theater"],
+                    desired["member_count"],
+                    room_id,
+                ),
             )
-        robot_added = conn.total_changes - before
+            updated += 1
+            if (old.get("group_name") or "") != group_name:
+                renamed += 1
+            existing[room_id] = {**old, **desired}
+
+        in_robot_updated = 0
+        robot_added = 0
+        if robot_set:
+            before = conn.total_changes
+            conn.executemany(
+                "UPDATE chat_store SET in_robot = 1 WHERE room_id = ? AND in_robot <> 1",
+                [(room_id,) for room_id in sorted(robot_set)],
+            )
+            placeholders = ", ".join("?" for _ in robot_set)
+            conn.execute(
+                f"UPDATE chat_store SET in_robot = 0 "
+                f"WHERE in_robot <> 0 AND room_id NOT IN ({placeholders})",
+                tuple(sorted(robot_set)),
+            )
+            in_robot_updated = conn.total_changes - before
+
+            before = conn.total_changes
+            for room_id in sorted(robot_set):
+                conn.execute(
+                    "INSERT OR IGNORE INTO robot_chat(room_id) VALUES (?)", (room_id,)
+                )
+            robot_added = conn.total_changes - before
+        else:
+            log.warning("groups 层机器人群列表为空，跳过机器人相关更新")
 
         before = conn.total_changes
         for userid, name in sorted(employee_names.items()):
@@ -976,15 +1413,22 @@ def _run_groups_tier(root: str, client: ScrmClient) -> dict[str, Any]:
             "groups": len(rows),
             "new_groups": new_groups,
             "renamed_groups": renamed,
+            "updated_groups": updated,
+            "groups_updated": updated,
+            "in_robot_updated": in_robot_updated,
             "robot_rooms_added": robot_added,
             "employee_changes": employee_changes,
         }
 
-    counts = _timeout_transaction(root, write)
+    counts = _timeout_transaction(
+        root, write, deadline=deadline, label="groups 层"
+    )
     log.info(
-        "groups 层完成 new=%s renamed=%s robot_added=%s",
+        "groups 层完成 new=%s updated=%s renamed=%s in_robot_updated=%s robot_added=%s",
         counts["new_groups"],
+        counts["updated_groups"],
         counts["renamed_groups"],
+        counts["in_robot_updated"],
         counts["robot_rooms_added"],
     )
     return counts
@@ -1001,11 +1445,15 @@ def _fetch_member_directory(
     # members 层的主数据是群列表；员工/部门只用于刷新归属，取不到时沿用旧归属。
     try:
         users = client.list_users()
+    except ScrmTierError:
+        raise
     except Exception as exc:  # noqa: BLE001 - 目录失败不阻塞成员/客户缓存
         log.warning("members 层员工目录不可用，沿用旧归属: %s", _redact(exc))
         users = []
     try:
         departments = client.list_departments()
+    except ScrmTierError:
+        raise
     except Exception as exc:  # noqa: BLE001
         log.warning("members 层部门目录不可用，沿用旧归属: %s", _redact(exc))
         departments = []
@@ -1021,13 +1469,139 @@ def _fetch_member_directory(
     return rows, users, departments
 
 
-def _run_members_tier(root: str, client: ScrmClient) -> dict[str, Any]:
+def _run_members_tier(
+    root: str,
+    client: ScrmClient,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    _check_deadline(deadline, "members 层")
     rows, users, departments = _fetch_member_directory(client)
+    _check_deadline(deadline, "members 层")
     rows = [row for row in rows if row.get("group_id")]
     has_users = bool(users)
     has_departments = bool(departments)
 
-    def update_groups(conn: sqlite3.Connection) -> tuple[int, list[str], list[str]]:
+    employee_ids = _read_employee_ids(root)
+    group_ids = sorted(_group_ids(rows))
+    user_ids = sorted(
+        {_as_str_id(u.get("userId") or u.get("userid")) for u in users}
+        | {str(uid) for uid in employee_ids}
+    )
+    user_ids = [uid for uid in user_ids if uid]
+    limit = _tier_limit()
+    if limit:
+        group_ids = group_ids[:limit]
+        user_ids = user_ids[:limit]
+
+    cache_path = _cache_db_path()
+    (
+        previous_member_counts,
+        previous_follow_counts,
+        previous_member_total,
+        previous_follow_total,
+    ) = _cache_live_counts(cache_path)
+
+    member_rows: list[dict[str, Any]] = []
+    follow_rows: list[dict[str, Any]] = []
+    errors = 0
+    units = 0
+    failed_member_rows = 0
+    failed_follow_rows = 0
+
+    for chat_id in group_ids:
+        _check_deadline(deadline, "members 层")
+        units += 1
+        try:
+            records = client.paginate_get(
+                "/openapi/chat/group/member/list",
+                extra_params={"chat_id": chat_id},
+            )
+            for rec in records or []:
+                item = _member_row(chat_id, rec)
+                if item:
+                    member_rows.append(item)
+        except ScrmTierError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 单个群失败不拖垮整层
+            errors += 1
+            # 失败 unit 沿用旧缓存，绝不让 staging 丢掉上一轮的数据。
+            previous = _cache_live_rows(
+                cache_path, "scrm_group_member", "chat_id", chat_id
+            )
+            member_rows.extend(previous)
+            failed_member_rows += len(previous)
+            log.warning(
+                "members 层拉取群成员失败 chat_id=%s（沿用旧数据 %s 行）: %s",
+                chat_id,
+                len(previous),
+                _redact(exc),
+            )
+
+    for userid in user_ids:
+        _check_deadline(deadline, "members 层")
+        units += 1
+        try:
+            records = client.paginate_post(
+                "/openapi/user/customer/list",
+                body_base={"user_id": userid},
+            )
+            for rec in records or []:
+                item = _follow_row(userid, rec)
+                if item:
+                    follow_rows.append(item)
+        except ScrmTierError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 单个员工失败不拖垮整层
+            errors += 1
+            previous = _cache_live_rows(cache_path, "scrm_follow", "userid", userid)
+            follow_rows.extend(previous)
+            failed_follow_rows += len(previous)
+            log.warning(
+                "members 层拉取客户失败 userid=%s（沿用旧数据 %s 行）: %s",
+                userid,
+                len(previous),
+                _redact(exc),
+            )
+
+    error_rate = (errors / units) if units else 0.0
+    previous_total = previous_member_total + previous_follow_total
+    failed_previous_rows = failed_member_rows + failed_follow_rows
+    row_error_rate = (
+        (failed_previous_rows / previous_total) if previous_total else 0.0
+    )
+    member_row_rate = (
+        (failed_member_rows / previous_member_total)
+        if previous_member_total
+        else 0.0
+    )
+    follow_row_rate = (
+        (failed_follow_rows / previous_follow_total)
+        if previous_follow_total
+        else 0.0
+    )
+    if (
+        error_rate > 0.05
+        or row_error_rate > 0.05
+        or member_row_rate > 0.05
+        or follow_row_rate > 0.05
+    ):
+        raise ScrmTierError(
+            f"members 层错误率超过 5%，保留旧缓存"
+            f"（units={error_rate:.2%}, old_rows={row_error_rate:.2%}, "
+            f"member_rows={member_row_rate:.2%}, follows={follow_row_rate:.2%}, "
+            f"errors={errors}, units={units}, "
+            f"failed_old_rows={failed_previous_rows}, old_rows_total={previous_total}）"
+        )
+
+    _check_deadline(deadline, "members 层")
+    # 与 full 层的竞态：发布时 chat_store 已不存在的群不再写成员缓存。
+    chat_ids = _read_chat_store_ids(root)
+    member_rows = [
+        item for item in member_rows if str(item.get("chat_id") or "") in chat_ids
+    ]
+    _check_deadline(deadline, "members 层")
+
+    def update_groups(conn: sqlite3.Connection) -> int:
         existing = {
             row["room_id"]
             for row in conn.execute("SELECT room_id FROM chat_store")
@@ -1080,72 +1654,19 @@ def _run_members_tier(root: str, client: ScrmClient) -> dict[str, Any]:
                     ),
                 )
             updated += 1
-        employees = [
-            row["userid"]
-            for row in conn.execute("SELECT userid FROM employee ORDER BY userid")
-        ]
-        return updated, sorted(existing), employees
+        return updated
 
-    updated, _existing_rooms, employee_ids = _timeout_transaction(root, update_groups)
-
-    group_ids = sorted(_group_ids(rows))
-    user_ids = sorted(
-        {_as_str_id(u.get("userId") or u.get("userid")) for u in users}
-        | {str(uid) for uid in employee_ids}
+    updated = _timeout_transaction(
+        root, update_groups, deadline=deadline, label="members 层"
     )
-    user_ids = [uid for uid in user_ids if uid]
-    limit = _tier_limit()
-    if limit:
-        group_ids = group_ids[:limit]
-        user_ids = user_ids[:limit]
-
-    member_rows: list[dict[str, Any]] = []
-    follow_rows: list[dict[str, Any]] = []
-    errors = 0
-    units = 0
-
-    for chat_id in group_ids:
-        units += 1
-        try:
-            records = client.paginate_get(
-                "/openapi/chat/group/member/list",
-                extra_params={"chat_id": chat_id},
-            )
-            for rec in records or []:
-                item = _member_row(chat_id, rec)
-                if item:
-                    member_rows.append(item)
-        except Exception as exc:  # noqa: BLE001 - 单个群失败不拖垮整层
-            errors += 1
-            log.warning(
-                "members 层拉取群成员失败 chat_id=%s: %s", chat_id, _redact(exc)
-            )
-
-    for userid in user_ids:
-        units += 1
-        try:
-            records = client.paginate_post(
-                "/openapi/user/customer/list",
-                body_base={"user_id": userid},
-            )
-            for rec in records or []:
-                item = _follow_row(userid, rec)
-                if item:
-                    follow_rows.append(item)
-        except Exception as exc:  # noqa: BLE001 - 单个员工失败不拖垮整层
-            errors += 1
-            log.warning(
-                "members 层拉取客户失败 userid=%s: %s", userid, _redact(exc)
-            )
-
-    error_rate = (errors / units) if units else 0.0
-    if error_rate > 0.05:
-        raise ScrmTierError(
-            f"members 层错误率 {error_rate:.2%} 超过 5%，保留旧缓存"
-            f"（errors={errors}, units={units}）"
-        )
-
-    _cache_replace(_cache_db_path(), member_rows, follow_rows)
+    # 进入发布阶段后不再因 deadline 中断，避免只更新 chat_store 而没更新缓存。
+    _cache_replace(
+        cache_path,
+        member_rows,
+        follow_rows,
+        member_units=set(group_ids) if limit else None,
+        follow_units=set(user_ids) if limit else None,
+    )
     counts = {
         "groups": len(group_ids),
         "employees": len(user_ids),
@@ -1155,14 +1676,22 @@ def _run_members_tier(root: str, client: ScrmClient) -> dict[str, Any]:
         "errors": errors,
         "units": units,
         "error_rate": round(error_rate, 4),
+        "row_error_rate": round(row_error_rate, 4),
+        "member_row_error_rate": round(member_row_rate, 4),
+        "follow_row_error_rate": round(follow_row_rate, 4),
+        "failed_old_rows": failed_previous_rows,
+        "old_rows_total": previous_total,
     }
     log.info(
-        "members 层完成 groups=%s employees=%s members=%s follows=%s errors=%s",
+        "members 层完成 groups=%s employees=%s members=%s follows=%s "
+        "errors=%s units=%s row_error_rate=%.2f%%",
         counts["groups"],
         counts["employees"],
         counts["members"],
         counts["follows"],
         counts["errors"],
+        counts["units"],
+        row_error_rate * 100.0,
     )
     return counts
 
@@ -1172,10 +1701,45 @@ def _run_members_tier(root: str, client: ScrmClient) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _run_full_tier(root: str, client: ScrmClient) -> dict[str, Any]:
+def _full_completeness_error(
+    rows: list[dict[str, Any]],
+    robot_ids: list[str],
+    snapshot: dict[str, Any],
+) -> str | None:
+    if not rows:
+        return "全量群列表为空"
+    chat_rows = int(snapshot.get("chat_rows") or 0)
+    ratio = _full_min_ratio()
+    if chat_rows and len(rows) < ratio * chat_rows:
+        return (
+            f"全量群数量 {len(rows)} 低于当前 chat_store {chat_rows} 行的 "
+            f"{ratio:.0%}（SCRM_FULL_MIN_RATIO）"
+        )
+    old_robot_rows = snapshot.get("robot_rows") or []
+    if not robot_ids and old_robot_rows:
+        return (
+            f"机器人群列表为空，但 robot_chat 仍有 {len(old_robot_rows)} 行"
+        )
+    return None
+
+
+def _run_full_tier(
+    root: str,
+    client: ScrmClient,
+    deadline: float | None = None,
+) -> dict[str, Any]:
     result = sync_from_scrm(root, client=client)
+    _check_deadline(deadline, "full 层")
     rows = [row for row in (result.get("all_rows") or []) if row.get("group_id")]
     result_ids = _group_ids(rows)
+    robot_ids = [
+        str(cid) for cid in (result.get("robot_chat_ids") or []) if cid
+    ]
+
+    snapshot = _read_chat_snapshot(root)
+    guard_error = _full_completeness_error(rows, robot_ids, snapshot)
+    if guard_error:
+        raise ScrmTierError(f"full 层完整性保护中止（未写入）：{guard_error}")
 
     def write(conn: sqlite3.Connection) -> dict[str, Any]:
         before = {
@@ -1198,7 +1762,8 @@ def _run_full_tier(root: str, client: ScrmClient) -> dict[str, Any]:
             "dissolved_ids": dissolved,
         }
 
-    counts = _timeout_transaction(root, write)
+    _check_deadline(deadline, "full 层")
+    counts = _timeout_transaction(root, write, deadline=deadline, label="full 层")
     dissolved = counts.pop("dissolved_ids", [])
     deleted = 0
     if dissolved:
@@ -1294,9 +1859,11 @@ def run_tier(
     tier: str,
     root: str | None = None,
     client: ScrmClient | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
-    """运行一个 tier；tier 锁被占用时返回 status=skip（退出码 0）。
+    """运行一个 tier；tier 锁被占用或处于启动黑名单时返回 status=skip。
 
+    ``force=True`` 仅跳过启动黑名单检查，运行中的 00:00/12:00 避让仍然生效。
     真正的同步失败会先写指标再抛出，由 CLI 转成非 0 退出码。
     """
     if tier not in TIERS:
@@ -1304,6 +1871,33 @@ def run_tier(
     root = os.path.abspath(root or ROOT)
     start = _now_iso()
     started_at = time.monotonic()
+
+    if not force and _in_start_blackout():
+        log.info(
+            "skip: %s 处于启动黑名单（00:00/08:30/09:00/12:00 ±%s 分钟）",
+            tier,
+            BLACKOUT_MINUTES,
+        )
+        line = _metrics_line(
+            tier,
+            start,
+            _now_iso(),
+            "skip",
+            {},
+            None,
+            time.monotonic() - started_at,
+        )
+        _append_metrics(line)
+        return {
+            "tier": tier,
+            "status": "skip",
+            "reason": "blackout",
+            "counts": {},
+            "metrics": line["request_metrics"],
+            "start": line["start"],
+            "end": line["end"],
+        }
+
     tier_lock = _acquire_tier_lock(root, tier)
     if tier_lock is None:
         log.info("skip: previous run still going")
@@ -1320,21 +1914,29 @@ def run_tier(
         return {
             "tier": tier,
             "status": "skip",
+            "reason": "busy",
             "counts": {},
             "metrics": line["request_metrics"],
             "start": line["start"],
             "end": line["end"],
         }
 
+    deadline = started_at + _tier_max_seconds(tier)
     try:
         if client is None:
             client = make_throttled_client(root)
+        set_deadline = getattr(client, "set_deadline", None)
+        if callable(set_deadline):
+            set_deadline(deadline)
+        elif hasattr(client, "_deadline"):
+            setattr(client, "_deadline", deadline)
+
         if tier == "groups":
-            counts = _run_groups_tier(root, client)
+            counts = _run_groups_tier(root, client, deadline=deadline)
         elif tier == "members":
-            counts = _run_members_tier(root, client)
+            counts = _run_members_tier(root, client, deadline=deadline)
         else:
-            counts = _run_full_tier(root, client)
+            counts = _run_full_tier(root, client, deadline=deadline)
 
         end = _now_iso()
         line = _metrics_line(
@@ -1375,16 +1977,28 @@ def run_tier(
         _release_tier_lock(tier_lock)
 
 
-def run_groups(root: str | None = None, client: ScrmClient | None = None) -> dict[str, Any]:
-    return run_tier("groups", root=root, client=client)
+def run_groups(
+    root: str | None = None,
+    client: ScrmClient | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    return run_tier("groups", root=root, client=client, force=force)
 
 
-def run_members(root: str | None = None, client: ScrmClient | None = None) -> dict[str, Any]:
-    return run_tier("members", root=root, client=client)
+def run_members(
+    root: str | None = None,
+    client: ScrmClient | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    return run_tier("members", root=root, client=client, force=force)
 
 
-def run_full(root: str | None = None, client: ScrmClient | None = None) -> dict[str, Any]:
-    return run_tier("full", root=root, client=client)
+def run_full(
+    root: str | None = None,
+    client: ScrmClient | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    return run_tier("full", root=root, client=client, force=force)
 
 
 # 兼容更显式的命名。
