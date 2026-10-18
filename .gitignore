@@ -9,6 +9,7 @@ input_file/*
 data.json
 data.json.tmp
 .sync.lock
+.sync-tier-*.lock
 timeout.db
 timeout.db-wal
 timeout.db-shm
@@ -16,3 +17,4 @@ timeout.db-shm
 .idea/
 .vscode/
 .env.bak*
+.scrm-net*.lock
