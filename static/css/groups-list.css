@@ -1,4 +1,4 @@
-/* 群管理 / 群列表专属：主表自然展开，仅修复群列表的移动端卡片与分页。 */
+/* 群管理 / 群列表专属：主表自然展开，仅修复群列表分页。 */
 
 /* 1. 主表随页面自然展开：不限制高度，也不产生内部纵向滚动；横向仍可滑动。 */
 #groups-list-table-wrap {
@@ -6,7 +6,7 @@
     overflow: auto;
 }
 
-/* 4. 分页在窄屏保持一行：按钮贴两端，中间信息可缩短并省略。 */
+/* 2. 分页在窄屏保持一行：按钮贴两端，中间信息可缩短并省略。 */
 @media (max-width: 860px) {
     .groups-pager {
         flex-wrap: nowrap;
@@ -29,52 +29,5 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-    }
-}
-
-/* 2/3. 只调整群列表卡片：机器人 tag 不拉伸；门店字段恢复左右排列。 */
-@media (max-width: 768px) {
-    #groups-list-table.ant-table-cards td[data-label="机器人"] .ant-tag {
-        display: inline-flex;
-        width: auto;
-        max-width: 100%;
-        flex: 0 0 auto;
-        justify-self: start;
-        align-self: start;
-        margin-right: 0;
-    }
-
-    #groups-list-table.ant-table-cards td[data-label="门店"][data-cards-full] {
-        display: grid !important;
-        grid-template-columns: minmax(4.5em, 38%) minmax(0, 1fr);
-        column-gap: var(--ant-space-3);
-        row-gap: 0;
-        align-items: baseline;
-    }
-
-    #groups-list-table.ant-table-cards td[data-label="门店"][data-cards-full]::before {
-        content: attr(data-label);
-        grid-column: 1;
-        grid-row: 1;
-        align-self: start;
-        flex: none;
-        min-width: 0;
-        font-size: var(--ant-font-size-sm);
-        color: var(--ant-color-text-secondary);
-        line-height: 1.65;
-    }
-
-    #groups-list-table.ant-table-cards td[data-label="门店"][data-cards-full] > a {
-        display: block;
-        grid-column: 2;
-        grid-row: 1;
-        width: auto;
-        max-width: 100%;
-        min-height: 0;
-        margin: 0;
-        line-height: 1.65;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
     }
 }
