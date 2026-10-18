@@ -13,6 +13,7 @@
     {% include '_range_assets.html' %}
     {% from '_range_picker.html' import picker with context %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=4">
     <style>
         .msg-cell { max-width: 420px; white-space: pre-wrap; word-break: break-word; }
         .score-note { margin: 0 0 12px; color: rgba(0,0,0,.65); font-size: 13px; }
@@ -27,13 +28,16 @@
         <span class="cl-meta">{{ start }} ~ {{ end }}</span>
     </div></header>
     <div class="container">
-        <header class="ant-page-header" data-ds-back="/score" data-ds-back-label="超时评分">
+        <header class="ant-page-header" data-ds-back="/score?start={{ start|urlencode }}&amp;end={{ end|urlencode }}{% if request.args.get('theater') %}&amp;theater={{ request.args.get('theater')|urlencode }}{% endif %}{% if request.args.get('q') %}&amp;q={{ request.args.get('q')|urlencode }}{% endif %}" data-ds-back-label="超时评分">
             <div class="ant-page-header-heading">
                 <h1>{{ detail.name if detail else '超时明细' }}</h1>
                 <div class="ant-page-header-sub">
 {% if detail and detail.store %}
-                        · {{ detail.store.tier or '—' }} · {{ '%.2f'|format(detail.store.score) }} 分
+                        {{ detail.store.tier or '—' }} · {{ '%.2f'|format(detail.store.score) }} 分
                         · 原始 {{ detail.store.raw }} / 有效 {{ detail.store.valid }}
+                    {% endif %}
+                    {% if detail and detail.name %}
+                        {% if detail.store %}· {% endif %}<a class="store-link" href="/store/{{ detail.name|urlencode }}?start={{ start|urlencode }}&amp;end={{ end|urlencode }}">门店详情<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>
                     {% endif %}
                 </div>
             </div>
@@ -70,23 +74,23 @@
         </div>
 
         <div class="stat-block store-block">
-            <div class="table-head"><h3>计入的超时</h3></div>
             <div class="store-table-wrapper ds-collapse" data-ds-title="计入的超时">
                 <table class="store-table">
                     <thead>
-                        <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>来源</th><th>超时消息</th></tr>
+                        <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th class="col-nowrap">来源</th><th>超时消息</th><th>操作</th></tr>
                     </thead>
                     <tbody>
                         {% for ev in detail.counted %}
                         <tr>
                             <td>{{ ev.created_at }}</td>
-                            <td>{{ ev.room_name }}</td>
+                            <td>{% if ev.room_id %}<button type="button" class="sd-link" data-sd-members="{{ ev.room_id }}" data-sd-name="{{ ev.room_name }}" title="查看群成员">{{ ev.room_name }}</button>{% else %}{{ ev.room_name }}{% endif %}</td>
                             <td>{{ ev.rule_name or '—' }}</td>
-                            <td>{% if ev.shared %}同城零售中心{% else %}本店{% endif %}</td>
+                            <td class="col-nowrap">{% if ev.shared %}同城零售中心{% else %}本店{% endif %}</td>
                             <td class="msg-cell">{{ ev.message or '—' }}</td>
+                            <td>{% if ev.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'room_id': ev.room_id, 'msg_id': ev.msg_id, 'rule_id': ev.rule_id, 'start': ev.created_at[:10], 'end': ev.created_at[:10], 'status': 'all'}|tojson|forceescape }}" data-sd-title="{{ ev.room_name }} · {{ ev.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="5" style="text-align:center" class="cl-muted">这个时间范围内没有计入的超时</td></tr>
+                        <tr><td colspan="6" style="text-align:center" class="cl-muted">这个时间范围内没有计入的超时</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -94,24 +98,24 @@
         </div>
 
         <div class="stat-block store-block">
-            <div class="table-head"><h3>剔除的超时</h3></div>
             <div class="store-table-wrapper ds-collapse" data-ds-title="剔除的超时">
                 <table class="store-table">
                     <thead>
-                        <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>剔除原因</th><th>来源</th><th>超时消息</th></tr>
+                        <tr><th data-card-title>触发时间</th><th>所在会话</th><th>规则</th><th>剔除原因</th><th class="col-nowrap">来源</th><th>超时消息</th><th>操作</th></tr>
                     </thead>
                     <tbody>
                         {% for ev in detail.excluded %}
                         <tr>
                             <td>{{ ev.created_at }}</td>
-                            <td>{{ ev.room_name }}</td>
+                            <td>{% if ev.room_id %}<button type="button" class="sd-link" data-sd-members="{{ ev.room_id }}" data-sd-name="{{ ev.room_name }}" title="查看群成员">{{ ev.room_name }}</button>{% else %}{{ ev.room_name }}{% endif %}</td>
                             <td>{{ ev.rule_name or '—' }}</td>
                             <td>{{ ev.reason }}</td>
-                            <td>{% if ev.shared %}同城零售中心{% else %}本店{% endif %}</td>
+                            <td class="col-nowrap">{% if ev.shared %}同城零售中心{% else %}本店{% endif %}</td>
                             <td class="msg-cell">{{ ev.message or '—' }}</td>
+                            <td>{% if ev.room_id %}<button type="button" class="sd-btn" data-sd-events="{{ {'room_id': ev.room_id, 'msg_id': ev.msg_id, 'rule_id': ev.rule_id, 'start': ev.created_at[:10], 'end': ev.created_at[:10], 'status': 'all'}|tojson|forceescape }}" data-sd-title="{{ ev.room_name }} · {{ ev.created_at[:10] }}">上下文 / 成员</button>{% endif %}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="6" style="text-align:center" class="cl-muted">没有被剔除的超时</td></tr>
+                        <tr><td colspan="7" style="text-align:center" class="cl-muted">没有被剔除的超时</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -120,6 +124,7 @@
         {% endif %}
     </div>
     <script>{{ ds_cards()|safe }}</script>
+    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=5"></script>
     <script src="{{ url_for('static', filename='js/score.js') }}?v=4"></script>
 </body>
 </html>

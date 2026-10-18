@@ -11,6 +11,7 @@
     <meta name="theme-color" content="#1677ff">
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stc-detail.css') }}?v=4">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -96,7 +97,8 @@
             </div>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='js/groups.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=5"></script>
+    <script src="{{ url_for('static', filename='js/groups.js') }}?v=4"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

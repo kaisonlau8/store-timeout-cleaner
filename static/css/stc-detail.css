@@ -16,8 +16,9 @@
 .sd-title{font-size:14px;color:rgba(0,0,0,.88);font-weight:500;overflow-wrap:anywhere}
 .sd-link{color:#1677ff;background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left;overflow-wrap:anywhere}
 .sd-link:hover{color:#4096ff;text-decoration:underline}
-.sd-btn{height:28px;padding:0 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:rgba(0,0,0,.88);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.sd-btn{height:28px;padding:0 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:rgba(0,0,0,.88);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
 .sd-btn:hover{color:#4096ff;border-color:#4096ff}
+th.col-nowrap,td.col-nowrap{white-space:nowrap}
 .sd-ctx{margin-top:8px;border-top:1px dashed #f0f0f0;padding-top:8px}
 .sd-msg{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:6px 8px;border-radius:6px;font-size:13px}
 .sd-msg + .sd-msg{margin-top:2px}
