@@ -206,6 +206,8 @@
             </div>
 
             <div class="tab-content" id="tab-monthly">
+                {% set monthly_months = data.stats.monthly.months %}
+                {% set latest_month = monthly_months[-1].split('-')[1] if monthly_months else '01' %}
                 <div class="month-selector">
                     <div class="selector-group">
                         <label>年份</label>
@@ -221,7 +223,7 @@
                     <div class="selector-group">
                         <label>月份</label>
                         <div class="custom-select" id="month-select-wrap">
-                            <div class="select-trigger" data-value="06">06月</div>
+                            <div class="select-trigger" data-value="{{ latest_month }}">{{ latest_month }}月</div>
                             <div class="select-options">
                                 <div class="select-option" data-value="01">01月</div>
                                 <div class="select-option" data-value="02">02月</div>

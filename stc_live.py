@@ -162,9 +162,10 @@ def chat_context(root: str, room_id: str, at: str, rule_minutes: int = 30, msg_i
 
 
 def query_events(conn: sqlite3.Connection, *, theater: str = "", q: str = "", store: str = "",
-                 rule_id: str = "", start: str = "", end: str = "", room_id: str = "",
+                 rule_id: str = "", msg_id: str = "", start: str = "", end: str = "", room_id: str = "",
                  limit: int = 200, offset: int = 0, status: str = "valid") -> dict[str, Any]:
     clauses, params = ["1=1"], []
+    msg_id = (msg_id or "").strip()[:120]
     if status == "valid":
         clauses.append("ifnull(e.exclude_reason, '') = ''")
     elif status == "excluded":
@@ -177,6 +178,8 @@ def query_events(conn: sqlite3.Connection, *, theater: str = "", q: str = "", st
         clauses.append("instr(lower(e.store), lower(?)) > 0"); params.append(q)
     if rule_id:
         clauses.append("e.rule_id = ?"); params.append(rule_id)
+    if msg_id:
+        clauses.append("e.msg_id = ?"); params.append(msg_id)
     if room_id:
         clauses.append("e.room_id = ?"); params.append(room_id)
     if start:

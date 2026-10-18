@@ -518,6 +518,7 @@ def timeout_events_api():
             q=(request.args.get("q") or "").strip(),
             store=(request.args.get("store") or "").strip(),
             rule_id=(request.args.get("rule_id") or "").strip(),
+            msg_id=(request.args.get("msg_id") or "").strip()[:120],
             room_id=(request.args.get("room_id") or "").strip(),
             start=g.date_range[0].isoformat(),
             end=g.date_range[1].isoformat(),
@@ -537,9 +538,9 @@ def group_members_api(room_id):
         abort(400)
     try:
         return jsonify({"members": stc_live.group_members(ROOT, room_id)})
-    except Exception as exc:
+    except Exception:
         logging.exception("拉取群成员失败")
-        return jsonify({"error": "SCRM 群成员接口暂不可用：" + type(exc).__name__}), 502
+        return jsonify({"error": "SCRM 群成员接口暂不可用，请稍后重试"}), 502
 
 
 @app.route("/api/timeout/context")
@@ -555,9 +556,9 @@ def timeout_context_api():
     try:
         msg_id = (request.args.get("msg_id") or "").strip()[:120]
         return jsonify(stc_live.chat_context(ROOT, room_id, at, min(max(minutes, 1), 240), msg_id=msg_id))
-    except Exception as exc:
+    except Exception:
         logging.exception("拉取会话上下文失败")
-        return jsonify({"error": "SCRM 会话存档接口暂不可用：" + type(exc).__name__}), 502
+        return jsonify({"error": "SCRM 会话存档接口暂不可用，请稍后重试"}), 502
 
 
 @app.route("/api/timeout/import", methods=["POST"])

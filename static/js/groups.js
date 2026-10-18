@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTheaterTable(data) {
         const tbody = document.querySelector('#theater-table tbody');
+        tbody.innerHTML = '';
         const rows = data.by_theater || [];
         if (!rows.length) {
             emptyRow(tbody, 3, '暂无数据');
@@ -112,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderStoreTable(data) {
         const tbody = document.querySelector('#store-table tbody');
+        tbody.innerHTML = '';
         const rows = data.by_store || [];
         if (!rows.length) {
             emptyRow(tbody, 5, '暂无数据');
@@ -121,8 +123,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const theater = row.theater
                 ? '<td data-label="战区" data-cards-full><button type="button" class="theater-chip" data-theater="' + escapeHtml(row.theater) + '" title="点击按该战区筛选">' + escapeHtml(row.theater) + '</button></td>'
                 : '<td data-label="战区"><span class="cl-muted">—</span></td>';
+            const store = row.store
+                ? '<a href="/store/' + encodeURIComponent(row.store) + '">' + escapeHtml(row.store) + '</a>'
+                : escapeHtml(row.store || '');
             return '<tr><td data-label="排名">' + (idx + 1) + '</td>' +
-                '<td data-label="门店" data-card-title>' + escapeHtml(row.store) + '</td>' +
+                '<td data-label="门店" data-card-title>' + store + '</td>' +
                 theater +
                 '<td data-label="群数">' + row.group_count + '</td>' +
                 '<td data-label="已拉机器人">' + (row.robot_count || 0) + '</td></tr>';
@@ -131,15 +136,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderUnmatchedTable(data) {
         const tbody = document.querySelector('#unmatched-table tbody');
+        tbody.innerHTML = '';
         const rows = data.unmatched || [];
         if (!rows.length) {
             emptyRow(tbody, 2, '匹配的群都已归店');
             return;
         }
-        tbody.innerHTML = rows.map((row) =>
-            '<tr><td data-label="群名" data-card-title>' + escapeHtml(row.group_name) + '</td>' +
-            '<td data-label="是否已拉机器人">' + (row.in_robot ? '是' : '否') + '</td></tr>'
-        ).join('');
+        tbody.innerHTML = rows.map((row) => {
+            const name = escapeHtml(row.group_name);
+            const group = row.room_id
+                ? '<button type="button" class="sd-link" data-sd-members="' + escapeHtml(row.room_id) + '" data-sd-name="' + escapeHtml(row.group_name) + '" title="查看群成员">' + name + '</button>'
+                : name;
+            return '<tr><td data-label="群名" data-card-title>' + group + '</td>' +
+                '<td data-label="是否已拉机器人">' + (row.in_robot ? '是' : '否') + '</td></tr>';
+        }).join('');
     }
 
     function render(data) {

@@ -38,23 +38,42 @@ window.stcKpiTag = function (name) {
         setTimeout(function () { mask.hidden = true; drawer.hidden = true; }, 250);
     }
     function loading() { bodyEl.innerHTML = '<div class="ds-skeleton-block" style="height:16px;margin:12px 0;width:60%"></div><div class="ds-skeleton-block" style="height:16px;margin:12px 0"></div><div class="ds-skeleton-block" style="height:16px;margin:12px 0;width:82%"></div>'; }
+    function errorText(status) {
+        if (status === 400) return '参数无效，无法查询';
+        if (status === 403) return '没有权限查看';
+        if (status === 404) return '没有找到对应记录';
+        if (status === 0 || status >= 500) return '服务暂时不可用，请稍后重试';
+        return '请求失败，请稍后重试';
+    }
     function getJSON(url) {
         return fetch(url, { credentials: 'same-origin' }).then(function (r) {
-            return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ('请求失败 ' + r.status)); return j; });
+            return r.json().catch(function () { return {}; }).then(function (j) {
+                if (!r.ok) throw new Error((j && j.error) || errorText(r.status));
+                return j;
+            });
+        }, function () {
+            throw new Error('服务暂时不可用，请稍后重试');
         });
     }
     function qs(o) { return Object.keys(o).filter(function (k) { return o[k] !== '' && o[k] != null; }).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(o[k]); }).join('&'); }
 
+    function excludeTag(reason) {
+        if (reason === '重复触发(同一消息)') return '<span class="sd-tag">同一消息另有规则命中</span>';
+        return '<span class="sd-tag">不计入：' + esc(reason) + '</span>';
+    }
     function eventItem(e) {
         return '<li class="sd-item" data-room="' + esc(e.room_id) + '" data-at="' + esc(e.created_at) + '" data-min="' + esc(e.minutes || 30) + '" data-msg="' + esc(e.msg_id) + '" data-name="' + esc(e.group_name) + '">' +
             '<div class="sd-row"><button type="button" class="sd-link sd-title" data-act="members">' + esc(e.group_name || e.room_id) + '</button></div>' +
             '<div class="sd-row"><span>' + esc(e.created_at) + '</span><span class="sd-tag warn">' + esc(e.rule_name || '超时') + '</span>' + (window.stcKpiTag ? window.stcKpiTag(e.rule_name) : '') +
             (e.minutes ? '<span>超过 ' + esc(e.minutes) + ' 分钟未回复</span>' : '') +
-            (e.exclude_reason ? '<span class="sd-tag">不计入：' + esc(e.exclude_reason) + '</span>' : '') + '</div>' +
+            (e.exclude_reason ? excludeTag(e.exclude_reason) : '') + '</div>' +
             (e.content ? '<div class="sd-row sd-quote">' + esc(e.content) + '</div>' : '') +
             '<div class="sd-row"><span>' + esc(e.store || '未归店') + (e.theater ? ' · ' + esc(e.theater) : '') + '</span>' +
             '<button type="button" class="sd-btn" data-act="ctx" aria-expanded="false" style="margin-left:auto">查看聊天上下文</button></div>' +
             '<div class="sd-ctx" hidden></div></li>';
+    }
+    function statusLabel(status) {
+        return status === 'excluded' ? '已剔除 ' : (status === 'all' ? '共 ' : '计入 ');
     }
     function events(params, title) {
         var state = { offset: 0, items: [] };
@@ -65,10 +84,11 @@ window.stcKpiTag = function (name) {
         };
         function page() {
             var p = Object.assign({}, params, { limit: 100, offset: state.offset });
+            var label = statusLabel(params.status);
             getJSON('/api/timeout/events?' + qs(p)).then(function (j) {
                 state.items = state.items.concat(j.events || []); state.offset = state.items.length;
                 if (!state.items.length) { bodyEl.innerHTML = '<div class="sd-empty">当前条件下暂无超时记录</div>'; return; }
-                bodyEl.innerHTML = '<p class="sd-sub">' + (params.status === 'excluded' ? '已剔除 ' : '计入 ') + j.total + ' 条，按时间倒序。点群名看群成员，点「查看聊天上下文」看前后消息。</p><ul class="sd-list">' +
+                bodyEl.innerHTML = '<p class="sd-sub">' + label + j.total + ' 条，按时间倒序。点群名看群成员，点「查看聊天上下文」看前后消息。</p><ul class="sd-list">' +
                     state.items.map(eventItem).join('') + '</ul>' +
                     (state.items.length < j.total ? '<div class="sd-more"><button type="button" class="sd-btn" data-act="more">加载更多（剩 ' + (j.total - state.items.length) + '）</button></div>' : '');
                 bodyEl._more = page;

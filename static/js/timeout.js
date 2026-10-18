@@ -230,6 +230,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function storeHref(name) {
+        const params = new URLSearchParams();
+        if (lastQuery.start) params.set('start', lastQuery.start);
+        if (lastQuery.end) params.set('end', lastQuery.end);
+        if (lastQuery.theater) params.set('theater', lastQuery.theater);
+        const query = params.toString();
+        return '/store/' + encodeURIComponent(name) + (query ? '?' + query : '');
+    }
+
     function renderTable(data) {
         const rules = (data.totals && data.totals.rules) || [];
         const thead = document.querySelector('#store-table thead');
@@ -249,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = rows.map((row, idx) => {
             const st = row.store || '';
             const num = (n, extra, label) => n ? '<button type="button" class="sd-num"' + evAttr(Object.assign({ store: st, q: '' }, extra), st + ' · ' + label) + '>' + n + '</button>' : '0';
-            let html = '<tr><td>' + (idx + 1) + '</td><td>' + (st ? '<a href="/store/' + encodeURIComponent(st) + '">' + escapeHtml(st) + '</a>' : '') +
+            let html = '<tr><td>' + (idx + 1) + '</td><td>' + (st ? '<a href="' + storeHref(st) + '">' + escapeHtml(st) + '</a>' : '') +
                 '</td><td>' + escapeHtml(row.theater || '') +
                 '</td><td>' + num(row.messages || 0, {}, '超时明细') +
                 '</td><td>' + (row.rooms || 0) +

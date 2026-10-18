@@ -114,7 +114,10 @@ def store_detail(
             continue
         item = {
             "created_at": ev.get("created_at") or "",
+            "room_id": ev.get("room_id") or "",
             "room_name": ev.get("room") or "",
+            "msg_id": ev.get("msg_id") or "",
+            "rule_id": ev.get("rule_id") or "",
             "rule_name": ev.get("rule_name") or "",
             "reason": ev.get("reason") or "",
             "message": ev.get("msg") or "",
@@ -292,6 +295,7 @@ def _classified_events(
                 "msg_id": row["msg_id"],
                 "rule_id": row["rule_id"],
                 "rule_name": row["rule_name"] or "",
+                "room_id": row["room_id"] or "",
                 "room": (row["room_name"] or row["room_id"] or ""),
                 "store": (row["store"] or "").strip(),
                 "theater": row["theater"] or "",
