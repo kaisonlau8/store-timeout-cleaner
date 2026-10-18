@@ -51,6 +51,9 @@ DEFAULT_SLOW_CAP = 30.0
 SYNC_LOCK_TIMEOUT = 120.0
 DEFAULT_MAX_SECONDS = {"groups": 900.0, "full": 900.0, "members": 10800.0}
 DEFAULT_FULL_MIN_RATIO = 0.95
+TIMEOUT_DB_BUSY_TIMEOUT_MS = 5000
+TIMEOUT_TRANSACTION_MAX_SECONDS = 30.0
+GROUPS_PUBLISH_LOCK_TIMEOUT = 20 * 60.0
 
 TIERS = ("groups", "members", "full")
 TIER_LOCKS = {"groups": "groups", "members": "members", "full": "groups"}
@@ -317,15 +320,13 @@ def plan_for_tier(tier: str, root: str | None = None) -> dict[str, Any]:
 
 
 def _net_lock_paths(root: str | None, concurrency: int) -> list[str]:
-    """跨进程节流槽位文件；并发 1 用单文件，并发 2 用两个槽位。"""
+    """跨进程节流槽位文件；槽位名固定，混合并发设置也最多占两个槽位。"""
     if not root:
         return []
+    slots = [os.path.join(root, ".scrm-net.lock")]
     if int(concurrency) > 1:
-        return [
-            os.path.join(root, f".scrm-net.{index}.lock")
-            for index in range(min(HARD_MAX_CONCURRENCY, int(concurrency)))
-        ]
-    return [os.path.join(root, ".scrm-net.lock")]
+        slots.append(os.path.join(root, ".scrm-net.1.lock"))
+    return slots
 
 
 class ThrottledScrmClient(ScrmClient):
@@ -796,14 +797,34 @@ def _lock_path(root: str, tier: str) -> str:
     return os.path.join(root, f".sync-tier-{TIER_LOCKS[tier]}.lock")
 
 
-def _acquire_tier_lock(root: str, tier: str):
+def _acquire_tier_lock(root: str, tier: str, timeout: float | None = None):
+    """取 tier 锁；timeout 为 None 时非阻塞，否则最多阻塞等待 timeout 秒。"""
     fh = open(_lock_path(root, tier), "a+")
+    if timeout is None:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fh.close()
+            return None
+        except BaseException:
+            fh.close()
+            raise
+        return fh
+
+    end = time.monotonic() + max(0.0, float(timeout))
     try:
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fh
+            except BlockingIOError:
+                if time.monotonic() >= end:
+                    fh.close()
+                    return None
+                time.sleep(0.05)
+    except BaseException:
         fh.close()
-        return None
-    return fh
+        raise
 
 
 def _release_tier_lock(fh) -> None:
@@ -822,26 +843,86 @@ def _timeout_transaction(
 ) -> Any:
     """在 .sync.lock 内执行一次 timeout.db 写事务。
 
-    00:00 / 12:00 前后 5 分钟先等待，且等待期间绝不持有 .sync.lock，
-    保证原任务的非阻塞取锁永远看到空闲。
+    00:00 / 12:00 前后 5 分钟先等待，且等待期间绝不持有 .sync.lock；
+    取到锁后再检查一次，若刚好进入黑名单则释放锁、等完窗口后重试。
+    事务 busy timeout 限制为 5 秒，且超过 30 秒即回滚中止。
     """
-    _check_deadline(deadline, label)
-    _wait_runtime_blackout(deadline, label=label)
-    _check_deadline(deadline, label)
-    with sync_lock(root):
+    while True:
         _check_deadline(deadline, label)
-        conn = timeout_store.connect(_timeout_db_path(root))
+        _wait_runtime_blackout(deadline, label=label)
+        _check_deadline(deadline, label)
+        blackout_remaining = 0.0
+        with sync_lock(root):
+            _check_deadline(deadline, label)
+            blackout_remaining = _runtime_blackout_remaining()
+            if blackout_remaining <= 0:
+                return _timeout_db_write(root, fn, deadline=deadline, label=label)
+        if blackout_remaining > 0:
+            if (
+                deadline is not None
+                and time.monotonic() + blackout_remaining >= deadline
+            ):
+                prefix = f"{label} " if label else ""
+                raise ScrmTierError(
+                    f"{prefix}等待运行时黑名单将超过最大运行时间，已中止且未发布"
+                )
+            log.info(
+                "SCRM 取锁后进入运行时黑名单（00:00/12:00 ±%s 分钟），"
+                "释放 .sync.lock 后等待 %.1fs",
+                BLACKOUT_MINUTES,
+                blackout_remaining,
+            )
+            time.sleep(blackout_remaining)
+        # 释放锁后重新检查并重试，等待期间绝不占用 .sync.lock。
+
+
+def _timeout_db_write(
+    root: str,
+    fn: Callable[[sqlite3.Connection], Any],
+    *,
+    deadline: float | None = None,
+    label: str = "",
+) -> Any:
+    """在已持有 .sync.lock 时执行 timeout.db 写事务。"""
+    started = time.monotonic()
+
+    def transaction_expired() -> bool:
+        return time.monotonic() - started > TIMEOUT_TRANSACTION_MAX_SECONDS
+
+    def timeout_error() -> ScrmTierError:
+        prefix = f"{label} " if label else ""
+        return ScrmTierError(
+            f"{prefix}timeout.db 写事务超过 "
+            f"{TIMEOUT_TRANSACTION_MAX_SECONDS:g} 秒，已回滚且未发布"
+        )
+
+    def abort_if_expired() -> None:
+        if transaction_expired():
+            raise timeout_error()
+
+    def progress_handler() -> None:
+        abort_if_expired()
+
+    conn = timeout_store.connect(_timeout_db_path(root))
+    try:
+        conn.execute(f"PRAGMA busy_timeout={TIMEOUT_DB_BUSY_TIMEOUT_MS}")
+        conn.execute("BEGIN IMMEDIATE")
+        conn.set_progress_handler(progress_handler, 1000)
         try:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                result = fn(conn)
-            except BaseException:
-                conn.rollback()
-                raise
-            conn.commit()
-            return result
-        finally:
-            conn.close()
+            abort_if_expired()
+            result = fn(conn)
+            abort_if_expired()
+        except BaseException as exc:
+            conn.rollback()
+            # sqlite 进度回调只能抛 OperationalError("interrupted")；
+            # 若确实是超过事务时限，统一转换为业务超时错误。
+            if transaction_expired() and not isinstance(exc, ScrmTierError):
+                raise timeout_error() from exc
+            raise
+        conn.commit()
+        return result
+    finally:
+        conn.close()
 
 
 def _read_chat_store_ids(root: str) -> set[str]:
@@ -1594,79 +1675,90 @@ def _run_members_tier(
         )
 
     _check_deadline(deadline, "members 层")
-    # 与 full 层的竞态：发布时 chat_store 已不存在的群不再写成员缓存。
-    chat_ids = _read_chat_store_ids(root)
-    member_rows = [
-        item for item in member_rows if str(item.get("chat_id") or "") in chat_ids
-    ]
-    _check_deadline(deadline, "members 层")
-
-    def update_groups(conn: sqlite3.Connection) -> int:
-        existing = {
-            row["room_id"]
-            for row in conn.execute("SELECT room_id FROM chat_store")
-        }
-        updated = 0
-        for row in rows:
-            room_id = str(row.get("group_id") or "").strip()
-            if not room_id or room_id not in existing:
-                continue
-            if has_users and has_departments:
-                conn.execute(
-                    """
-                    UPDATE chat_store SET
-                      owner_id = ?, owner_name = ?, owner_dept = ?,
-                      store = ?, theater = ?, member_count = ?
-                    WHERE room_id = ?
-                    """,
-                    (
-                        row.get("owner_id") or None,
-                        row.get("owner") or None,
-                        row.get("dept") or None,
-                        row.get("store") or "",
-                        row.get("theater") or "",
-                        _int_or_none(row.get("member_count")),
-                        room_id,
-                    ),
-                )
-            elif has_users:
-                conn.execute(
-                    """
-                    UPDATE chat_store SET
-                      owner_id = ?, owner_name = ?, member_count = ?
-                    WHERE room_id = ?
-                    """,
-                    (
-                        row.get("owner_id") or None,
-                        row.get("owner") or None,
-                        _int_or_none(row.get("member_count")),
-                        room_id,
-                    ),
-                )
-            else:
-                conn.execute(
-                    "UPDATE chat_store SET owner_id = ?, member_count = ? "
-                    "WHERE room_id = ?",
-                    (
-                        row.get("owner_id") or None,
-                        _int_or_none(row.get("member_count")),
-                        room_id,
-                    ),
-                )
-            updated += 1
-        return updated
-
-    updated = _timeout_transaction(
-        root, update_groups, deadline=deadline, label="members 层"
+    # 与 full/groups 层共用 groups tier 锁：在锁内重读 chat_store 并完成发布。
+    groups_lock = _acquire_tier_lock(
+        root, "groups", timeout=GROUPS_PUBLISH_LOCK_TIMEOUT
     )
-    # 进入发布阶段后不再因 deadline 中断，避免只更新 chat_store 而没更新缓存。
-    _cache_replace(
-        cache_path,
-        member_rows,
-        follow_rows,
-        member_units=set(group_ids) if limit else None,
-        follow_units=set(user_ids) if limit else None,
-    )
+    if groups_lock is None:
+        raise ScrmTierError(
+            "members 层等待 groups tier 锁超时（20 分钟），已中止发布且未丢数据"
+        )
+    try:
+        _check_deadline(deadline, "members 层")
+        chat_ids = _read_chat_store_ids(root)
+        member_rows = [
+            item for item in member_rows
+            if str(item.get("chat_id") or "") in chat_ids
+        ]
+
+        def update_groups(conn: sqlite3.Connection) -> int:
+            existing = {
+                row["room_id"]
+                for row in conn.execute("SELECT room_id FROM chat_store")
+            }
+            updated = 0
+            for row in rows:
+                room_id = str(row.get("group_id") or "").strip()
+                if not room_id or room_id not in existing:
+                    continue
+                if has_users and has_departments:
+                    conn.execute(
+                        """
+                        UPDATE chat_store SET
+                          owner_id = ?, owner_name = ?, owner_dept = ?,
+                          store = ?, theater = ?, member_count = ?
+                        WHERE room_id = ?
+                        """,
+                        (
+                            row.get("owner_id") or None,
+                            row.get("owner") or None,
+                            row.get("dept") or None,
+                            row.get("store") or "",
+                            row.get("theater") or "",
+                            _int_or_none(row.get("member_count")),
+                            room_id,
+                        ),
+                    )
+                elif has_users:
+                    conn.execute(
+                        """
+                        UPDATE chat_store SET
+                          owner_id = ?, owner_name = ?, member_count = ?
+                        WHERE room_id = ?
+                        """,
+                        (
+                            row.get("owner_id") or None,
+                            row.get("owner") or None,
+                            _int_or_none(row.get("member_count")),
+                            room_id,
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE chat_store SET owner_id = ?, member_count = ? "
+                        "WHERE room_id = ?",
+                        (
+                            row.get("owner_id") or None,
+                            _int_or_none(row.get("member_count")),
+                            room_id,
+                        ),
+                    )
+                updated += 1
+            return updated
+
+        updated = _timeout_transaction(
+            root, update_groups, deadline=deadline, label="members 层"
+        )
+        # 进入发布阶段后不再因 deadline 中断，避免只更新 chat_store 而没更新缓存。
+        _cache_replace(
+            cache_path,
+            member_rows,
+            follow_rows,
+            member_units=set(group_ids) if limit else None,
+            follow_units=set(user_ids) if limit else None,
+        )
+    finally:
+        _release_tier_lock(groups_lock)
     counts = {
         "groups": len(group_ids),
         "employees": len(user_ids),

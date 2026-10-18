@@ -33,8 +33,9 @@ tier 自己的 flock（`ROOT/.sync-tier-groups.lock` 或 `ROOT/.sync-tier-member
 
 - **启动**：`run_tier()` / CLI 在 `00:00`、`08:30`、`09:00`、`12:00` ±5 分钟内拒绝启动，记录 skip 并退出 0；`--force` 可人工覆盖。
 - **运行中**：所有 HTTP 请求在真正发出前检查 `00:00` / `12:00` ±5 分钟，命中时先睡到窗口结束，绝不抢占原任务的资源。
-- **写库**：`_timeout_transaction()` 在取 `ROOT/.sync.lock` **之前**等待同一个运行中黑名单；等待期间不持有 `.sync.lock`，
-  原任务在 00:00 / 12:00 的非阻塞取锁不会看到 busy。
+- **写库**：`_timeout_transaction()` 在取 `ROOT/.sync.lock` **之前**等待同一个运行中黑名单；等待期间不持有 `.sync.lock`。
+  取到锁后还会再检查一次，若刚好进入黑名单则立刻释放锁、等完窗口后重试，原任务在 00:00 / 12:00 的非阻塞取锁不会看到 busy。
+  timeout.db 连接的 busy timeout 限制为 5 秒；单个写事务超过 30 秒会回滚并中止，避免长期占用文件锁。
 - **最大运行时间**：`SCRM_TIER_MAX_SECONDS` 对当轮生效，未设置时 groups/full 为 900 秒、members 为 10800 秒。
   超时在发布前抛出 `ScrmTierError`，不写 `chat_store` / `robot_chat` / 成员缓存（指标记为 error，CLI 非 0）。
 
@@ -56,8 +57,10 @@ tier 自己的 flock（`ROOT/.sync-tier-groups.lock` 或 `ROOT/.sync-tier-member
 
 每个 HTTP 请求（含重试）都必须拿到一个网络槽位 flock：
 
-- 并发 1：`ROOT/.scrm-net.lock`；
-- 并发 2：`ROOT/.scrm-net.0.lock` + `ROOT/.scrm-net.1.lock`。
+- 并发 1：只使用 `ROOT/.scrm-net.lock`（slot0）；
+- 并发 2：使用 `ROOT/.scrm-net.lock`（slot0）+ `ROOT/.scrm-net.1.lock`（slot1）。
+
+槽位名与进程的并发设置无关。并发 1 与并发 2 的进程混跑时也共享同一组 slot0/slot1，因此全局最多 2 个请求。
 
 槽位文件内保存最近一次请求开始时间戳（wall clock）。请求方持有 flock 等待 `min_interval + jitter`，
 写入本次开始时间，然后**继续持有 flock 完成 HTTP 请求**才释放。因此多个 tier 进程合计最多 1 个请求
@@ -98,14 +101,17 @@ members 层写独立的 SQLite：
 - 单个 `chat_id` / `userid` 拉取失败时，从既有主表复制该 unit 的旧行进入本轮 staging，失败不会丢上一轮数据。
 - 错误率同时按 unit 数（`errors / units`）和旧行数加权（失败 unit 的旧行数 / 旧行总数，并分别看成员/客户旧行）计算，任一超过 5% 整轮失败，旧缓存保持不变。
 - 设置 `SCRM_TIER_LIMIT` 时只替换本轮实际处理的 unit，其他 unit 的成员/客户行原样保留；未设置时整表替换。
-- 发布成员前短读 `chat_store`（不取 `.sync.lock`），丢弃 `chat_id` 已不在其中的成员行，避免 members 与 full 竞态把已删除群写回来。
+- 发布成员前阻塞获取 groups tier 锁（`.sync-tier-groups.lock`，最多等待 20 分钟，超时则中止发布且不改动旧数据）；
+  在锁内重新短读 `chat_store`，丢弃 `chat_id` 已不在其中的成员行，并在同一临界区完成 `chat_store` 更新与缓存发布，
+  避免 members 与 full/groups 竞态把已删除群写回来。
 - CLI 失败时以非 0 退出。
 
 ## 锁与写入边界
 
 - 所有网络请求都在 `.sync.lock` 之外完成；HTTP 只持有 `.scrm-net*.lock` 槽位。
 - 对 `timeout.db` 的写入只发生在短暂临界区：普通 `fcntl.flock` 锁 `ROOT/.sync.lock`，最多等待 120 秒；每次写入是一个事务。
-- `_timeout_transaction()` 在 00:00 / 12:00 ±5 分钟先等待，且等待过程中不持有 `.sync.lock`。
+- `_timeout_transaction()` 在 00:00 / 12:00 ±5 分钟先等待，且等待过程中不持有 `.sync.lock`；取锁后再次检查，
+  若命中黑名单则释放锁等待后重试。事务 busy timeout 为 5 秒，超过 30 秒即回滚中止。
 - 不使用 `app._SYNC_LOCK`，与 00:00 / 12:00 原任务的进程内锁隔离，但共用同一个文件锁。
 - `full` 只调用 `sync_from_scrm(client=...)` + `timeout_store.replace_context`，不计算超时，也不改写 `data.json` 统计；`data.json` 仍由原 00:00 / 12:00 任务维护。
 

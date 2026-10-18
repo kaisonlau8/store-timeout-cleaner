@@ -424,9 +424,13 @@ class ThrottleTests(unittest.TestCase):
             self.assertEqual(
                 scrm_tiered._net_lock_paths(tmp, 2),
                 [
-                    os.path.join(tmp, ".scrm-net.0.lock"),
+                    os.path.join(tmp, ".scrm-net.lock"),
                     os.path.join(tmp, ".scrm-net.1.lock"),
                 ],
+            )
+            self.assertEqual(
+                scrm_tiered._net_lock_paths(tmp, 1)[0],
+                scrm_tiered._net_lock_paths(tmp, 2)[0],
             )
 
     def test_requests_from_two_clients_are_serialized_by_shared_flock(self):
@@ -514,6 +518,59 @@ class ThrottleTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=5)
             self.assertEqual(max_active, 2)
+
+    def test_mixed_concurrency_settings_never_exceed_two_slots(self):
+        active = 0
+        max_active = 0
+        guard = threading.Lock()
+
+        class ActiveClient(ThrottledScrmClient):
+            def _send_http(self, url, data, headers, method):
+                nonlocal active, max_active
+                with guard:
+                    active += 1
+                    max_active = max(max_active, active)
+                time.sleep(0.08)
+                with guard:
+                    active -= 1
+                return {"code": 0, "data": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            single = ActiveClient(
+                "http://fake",
+                "app",
+                "secret",
+                concurrency=1,
+                min_interval=0,
+                root=tmp,
+                rng=self.ZeroRng(),
+            )
+            pair = ActiveClient(
+                "http://fake",
+                "app",
+                "secret",
+                concurrency=2,
+                min_interval=0,
+                root=tmp,
+                rng=self.ZeroRng(),
+            )
+            barrier = threading.Barrier(3)
+
+            def call(client):
+                barrier.wait()
+                client._request("/openapi/test", with_token=False)
+
+            threads = [
+                threading.Thread(target=call, args=(single,)),
+                threading.Thread(target=call, args=(pair,)),
+                threading.Thread(target=call, args=(pair,)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=5)
+
+        self.assertLessEqual(max_active, 2)
 
 
 class GroupsTierTests(_Base):
@@ -1136,6 +1193,81 @@ class MembersTierTests(_Base):
         self.assertNotIn(("g_missing", "m_missing"), members_after)
         self.assertNotIn(("g_missing", "old_missing"), members_after)
 
+    def _groups_lock_busy(self):
+        fh = open(self.root / ".sync-tier-groups.lock", "a+")
+        try:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            else:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+                return False
+        finally:
+            fh.close()
+
+    def test_publish_reads_chat_store_and_replaces_cache_under_groups_lock(self):
+        self._seed()
+        checks = []
+        original_read = scrm_tiered._read_chat_store_ids
+        original_replace = scrm_tiered._cache_replace
+
+        def read_ids(root):
+            checks.append(("read", self._groups_lock_busy()))
+            return original_read(root)
+
+        def replace(*args, **kwargs):
+            checks.append(("publish", self._groups_lock_busy()))
+            return original_replace(*args, **kwargs)
+
+        with mock.patch.object(
+            scrm_tiered, "_read_chat_store_ids", side_effect=read_ids
+        ), mock.patch.object(
+            scrm_tiered, "_cache_replace", side_effect=replace
+        ):
+            result = run_members(str(self.root), client=self._client())
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(checks, [("read", True), ("publish", True)])
+
+    def test_publish_aborts_without_writing_when_groups_lock_times_out(self):
+        self._seed()
+        self.seed_cache([("g1", "old_member", 1, 1, 1, "", "", "")])
+        lock_fh = open(self.root / ".sync-tier-groups.lock", "a+")
+        fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            with mock.patch.object(
+                scrm_tiered, "GROUPS_PUBLISH_LOCK_TIMEOUT", 0.01
+            ):
+                with self.assertRaises(scrm_tiered.ScrmTierError):
+                    run_members(str(self.root), client=self._client())
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+            lock_fh.close()
+
+        conn = timeout_store.connect(str(self.db_path))
+        try:
+            row = conn.execute(
+                "SELECT owner_id, member_count FROM chat_store WHERE room_id = 'g1'"
+            ).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["owner_id"], "old")
+        self.assertEqual(row["member_count"], 1)
+
+        cache = sqlite3.connect(str(self.cache_path))
+        try:
+            members = {
+                (row[0], row[1])
+                for row in cache.execute(
+                    "SELECT chat_id, userid FROM scrm_group_member"
+                )
+            }
+        finally:
+            cache.close()
+        self.assertEqual(members, {("g1", "old_member")})
+        self.assertEqual(self.read_metrics()[-1]["status"], "error")
+
 
 class LockTests(_Base):
     def test_busy_tier_lock_skips_without_calling_client(self):
@@ -1293,13 +1425,77 @@ class RuntimeGuardTests(_Base):
         with mock.patch.object(
             scrm_tiered,
             "_runtime_blackout_remaining",
-            side_effect=[10.0, 0.0],
+            side_effect=[10.0, 0.0, 0.0],
         ), mock.patch.object(scrm_tiered.time, "sleep", side_effect=fake_sleep):
             result = scrm_tiered._timeout_transaction(str(self.root), work)
 
         self.assertEqual(result, "ok")
         self.assertEqual(sleeps, [10.0])
         self.assertEqual(lock_states, ["free"])
+
+    def test_timeout_transaction_rechecks_blackout_after_acquiring_lock(self):
+        lock_states = []
+        sleeps = []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            fh = open(self.root / ".sync.lock", "a+")
+            try:
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    lock_states.append("busy")
+                else:
+                    lock_states.append("free")
+                    fcntl.flock(fh, fcntl.LOCK_UN)
+            finally:
+                fh.close()
+
+        def work(conn):
+            return conn.execute("SELECT 1").fetchone()[0]
+
+        with mock.patch.object(
+            scrm_tiered,
+            "_runtime_blackout_remaining",
+            side_effect=[0.0, 10.0, 0.0, 0.0],
+        ), mock.patch.object(scrm_tiered.time, "sleep", side_effect=fake_sleep):
+            result = scrm_tiered._timeout_transaction(str(self.root), work)
+
+        self.assertEqual(result, 1)
+        self.assertEqual(sleeps, [10.0])
+        self.assertEqual(lock_states, ["free"])
+
+    def test_timeout_transaction_busy_timeout_and_rollback_after_30s(self):
+        conn = timeout_store.connect(str(self.db_path))
+        try:
+            timeout_store.set_meta(conn, "tx_probe", "old")
+            conn.commit()
+        finally:
+            conn.close()
+        observed = []
+
+        def work(conn):
+            observed.append(conn.execute("PRAGMA busy_timeout").fetchone()[0])
+            conn.execute(
+                "INSERT INTO sync_meta(key, value) VALUES ('tx_probe', 'new') "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+            )
+            time.sleep(0.02)
+            return "ok"
+
+        with mock.patch.object(
+            scrm_tiered, "TIMEOUT_TRANSACTION_MAX_SECONDS", 0.01
+        ):
+            with self.assertRaises(scrm_tiered.ScrmTierError):
+                scrm_tiered._timeout_transaction(str(self.root), work)
+
+        self.assertEqual(observed, [5000])
+        conn = timeout_store.connect(str(self.db_path))
+        try:
+            value = timeout_store.get_meta(conn, "tx_probe")
+        finally:
+            conn.close()
+        self.assertEqual(value, "old")
 
     def test_default_and_override_max_runtime(self):
         self.assertEqual(scrm_tiered._tier_max_seconds("groups"), 900.0)
