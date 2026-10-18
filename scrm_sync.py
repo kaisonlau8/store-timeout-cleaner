@@ -205,8 +205,9 @@ def _resolve_robots(
     return robots
 
 
-def sync_from_scrm(root: str) -> dict[str, Any]:
-    client = make_scrm_client(root)
+def sync_from_scrm(root: str, client: ScrmClient | None = None) -> dict[str, Any]:
+    if client is None:
+        client = make_scrm_client(root)
 
     configured_ids = [
         p.strip()
