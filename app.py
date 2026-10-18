@@ -47,6 +47,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 ROOT = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 
+# 共享断行过滤器（design-system/linebreak.py 由 sync.sh 同步到 ds/）
+from ds.linebreak import ds_wbr_filename, nobreak_tail  # noqa: E402
+
+app.jinja_env.filters["nobreak_tail"] = nobreak_tail
+app.jinja_env.filters["ds_wbr_filename"] = ds_wbr_filename
+
 # --- 设计系统（antd-lite.css / sprite.svg，由 design-system/sync.sh 同步到 ds/）---
 _DS_DIR = os.path.join(ROOT, "ds")
 _ds_cache: dict[str, str] = {}

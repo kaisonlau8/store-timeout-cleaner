@@ -13,6 +13,7 @@ from score_export import stores_to_csv, stores_to_xlsx
 from score_llm import llm_configured, maybe_autostart_review, review_status, start_review_job
 from score_query import build_report, parse_range, store_detail
 from date_ranges import install_date_ranges
+from ds.linebreak import nobreak_tail
 
 
 def _db_path(root: str) -> str:
@@ -69,6 +70,7 @@ def _with_auto_review(root: str, start, end, build):
 
 def register_score(app: Flask, root: str) -> None:
     install_date_ranges(app)
+    app.jinja_env.filters.setdefault("nobreak_tail", nobreak_tail)
     app.jinja_env.globals.setdefault("theater_href", theater_href)
     @app.route("/score")
     def score_page():

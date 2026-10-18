@@ -499,8 +499,8 @@ def test_groups_list_responsive_fixes_are_scoped_and_versioned(directory_client)
     client, _, _ = directory_client
     html = client.get("/groups").get_data(as_text=True)
     assert "css/groups-list.css?v=2" in html
-    assert "js/groups-list.js?v=4" in html
-    assert "js/groups.js?v=7" in html
+    assert "js/groups-list.js?v=5" in html
+    assert "js/groups.js?v=8" in html
 
     css = (ROOT / "static" / "css" / "groups-list.css").read_text(encoding="utf-8")
     assert "#groups-list-table-wrap" in css

@@ -111,9 +111,9 @@
                     <tbody>
                         {% for row in report.stores %}
                         <tr>
-                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}">{{ row.name }}</a></td>
+                            <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}">{{ row.name | nobreak_tail }}</a></td>
                             <td>{{ row.code or '—' }}</td>
-                            <td>{% if row.theater %}<a class="store-link" href="{{ theater_href(row.theater, report.start, report.end) }}">{{ row.theater }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}—{% endif %}</td>
+                            <td>{% if row.theater %}<a class="store-link" href="{{ theater_href(row.theater, report.start, report.end) }}">{{ row.theater | nobreak_tail }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}—{% endif %}</td>
                             <td class="num">{{ row.robot_group_count }}</td>
                             <td class="num">{{ row.raw }}</td>
                             <td class="num">{{ row.valid }}</td>

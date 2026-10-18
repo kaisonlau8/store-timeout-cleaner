@@ -177,7 +177,7 @@ class CoveragePageTests(unittest.TestCase):
         self.assertIn("甲店", robot)
         self.assertNotIn("未接入店", robot)
         after = self._table(html, "after-all")
-        self.assertIn("华东战区", after)
+        self.assertIn('华东<span class="ds-nowrap">战区</span>', after)
         self.assertIn(">3<", after)
         self.assertIn(">4<", after)
 
