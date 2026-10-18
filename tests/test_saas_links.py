@@ -583,10 +583,10 @@ def test_static_asset_cache_versions_are_consistent():
         "stc-detail.js": "6",
         "groups.js": "7",
         "groups-list.css": "2",
-        "groups-list.js": "3",
+        "groups-list.js": "4",
         "group.js": "3",
         "store-page.js": "1",
-        "timeout.js": "10",
+        "timeout.js": "12",
     }
     templates = list((ROOT / "templates").glob("*.html"))
     for asset, version in expected.items():

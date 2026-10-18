@@ -34,7 +34,7 @@
         <span class="cl-meta">{{ report.start }} ~ {{ report.end }}</span>
     </div></header>
     <div class="container">
-        <header class="ant-page-header" data-ds-back="/" data-ds-back-label="首页">
+        <header class="ant-page-header">
             <div class="ant-page-header-heading">
                 <h1>门店超时评分</h1>
                 <div class="ant-page-header-sub">按选定日期重算收缩率。默认本月 1 日至今天（北京时间）。</div>
@@ -113,7 +113,7 @@
                         <tr>
                             <td data-card-title><a href="/score/store?name={{ row.name|urlencode }}&amp;start={{ report.start }}&amp;end={{ report.end }}{% if report.theater %}&amp;theater={{ report.theater|urlencode }}{% endif %}{% if report.q %}&amp;q={{ report.q|urlencode }}{% endif %}">{{ row.name }}</a></td>
                             <td>{{ row.code or '—' }}</td>
-                            <td>{{ row.theater or '—' }}</td>
+                            <td>{% if row.theater %}<a class="store-link" href="{{ theater_href(row.theater, report.start, report.end) }}">{{ row.theater }}<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>{% else %}—{% endif %}</td>
                             <td class="num">{{ row.robot_group_count }}</td>
                             <td class="num">{{ row.raw }}</td>
                             <td class="num">{{ row.valid }}</td>

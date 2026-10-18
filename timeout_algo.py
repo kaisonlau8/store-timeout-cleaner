@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import threading
 from datetime import date, datetime, time, timedelta
 from typing import Any, Callable
@@ -19,6 +20,8 @@ from zoneinfo import ZoneInfo
 from timeout_detect import TimeoutRule, detect_timeout_events, parse_msgtime
 from timeout_store import (
     connect,
+    connect_ro,
+    is_readonly_open_error,
     get_meta,
     load_chat_map,
     load_employees,
@@ -82,8 +85,15 @@ def _now() -> str:
     return datetime.now(SHANGHAI).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def open_db(root: str):
-    conn = connect(os.path.join(root, "timeout.db"))
+def open_db(root: str, *, db_path: str | None = None):
+    path = db_path or os.path.join(root, "timeout.db")
+    try:
+        conn = connect(path)
+    except sqlite3.OperationalError as exc:
+        if not is_readonly_open_error(exc):
+            raise
+        # 只读数据副本：跳过建表/播种，页面查询仍可读已有规则。
+        return connect_ro(path)
     conn.executescript(SCHEMA)
     _seed(conn)
     _migrate_kpi(conn)
@@ -112,12 +122,12 @@ def kpi_rule_flags(conn) -> dict[str, bool]:
     return out
 
 
-def non_kpi_rules(root: str) -> tuple[set[str], set[str]]:
+def non_kpi_rules(root: str, *, db_path: str | None = None) -> tuple[set[str], set[str]]:
     """返回 (不计 KPI 的 rule_key 集合, 对应规则名集合)。"""
-    path = os.path.join(root, "timeout.db")
+    path = db_path or os.path.join(root, "timeout.db")
     if not os.path.isfile(path):
         return set(), set()
-    conn = open_db(root)
+    conn = open_db(root, db_path=path)
     try:
         keys = {k for k, v in kpi_rule_flags(conn).items() if not v}
         names = {r[0] for r in conn.execute(

@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from timeout_store import connect, get_meta, list_imports
+from timeout_store import connect, connect_ro, get_meta, is_readonly_open_error, list_imports
 from date_ranges import parse_range
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -18,11 +18,19 @@ def db_path(root: str) -> str:
     return os.path.join(root, "timeout.db")
 
 
-def _open(root: str) -> sqlite3.Connection | None:
-    path = db_path(root)
+db_path_fn = db_path
+
+
+def _open(root: str, *, db_path: str | None = None) -> sqlite3.Connection | None:
+    path = db_path or db_path_fn(root)
     if not os.path.isfile(path):
         return None
-    return connect(path)
+    try:
+        return connect(path)
+    except sqlite3.OperationalError as exc:
+        if not is_readonly_open_error(exc):
+            raise
+        return connect_ro(path)
 
 
 def _parse_date(value: str | None, fallback: date) -> date:
@@ -90,13 +98,15 @@ def _scope_clause(
     ident: str,
     theater: str = "",
     q: str = "",
+    rule_id: str = "",
 ) -> tuple[str, list[Any]]:
-    """战区与门店搜索同时生效。未传 theater/q 时仍兼容 scope=theater|store。"""
+    """战区、门店搜索与规则筛选同时生效。未传 theater/q 时仍兼容 scope=theater|store。"""
     clauses: list[str] = []
     params: list[Any] = []
     theater = (theater or "").strip()
     q = (q or "").strip()
     ident = (ident or "").strip()
+    rule_id = (rule_id or "").strip()
     if theater:
         clauses.append("theater = ?")
         params.append(theater)
@@ -109,12 +119,71 @@ def _scope_clause(
     elif scope == "store" and ident:
         clauses.append("store = ?")
         params.append(ident)
+    if rule_id:
+        clauses.append("rule_id = ?")
+        params.append(rule_id)
     if not clauses:
         return "", []
     return " AND " + " AND ".join(clauses), params
 
 
-def query_meta(root: str) -> dict[str, Any]:
+def _rule_totals(conn: sqlite3.Connection, where: str, params: list[Any]) -> list[dict[str, Any]]:
+    """按规则聚合「计入」的触发次数，/timeout 规则卡与战区页共用同一口径。"""
+    return [
+        {
+            "rule_id": row["rule_id"],
+            "rule_name": row["rule_name"] or row["rule_id"],
+            "triggers": int(row["triggers"]),
+            "messages": int(row["messages"]),
+            "rooms": int(row["rooms"]),
+        }
+        for row in conn.execute(
+            f"""
+            SELECT rule_id, MAX(rule_name) AS rule_name,
+                   COUNT(*) AS triggers,
+                   COUNT(DISTINCT msg_id) AS messages,
+                   COUNT(DISTINCT room_id) AS rooms
+            FROM timeout_event
+            WHERE {where}
+            GROUP BY rule_id
+            ORDER BY triggers DESC
+            """,
+            params,
+        )
+    ]
+
+
+def query_rule_totals(
+    root: str,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    theater: str = "",
+    q: str = "",
+    rule_id: str = "",
+    db_path: str | None = None,
+) -> list[dict[str, Any]]:
+    """复用 /timeout 图表同一套 WHERE，供战区页取规则卡数值。"""
+    start_d, end_d = parse_range(start, end)
+    start_sql = start_d.isoformat() + " 00:00:00"
+    end_sql = (end_d + timedelta(days=1)).isoformat() + " 00:00:00"
+    conn = _open(root, db_path=db_path)
+    if conn is None:
+        return []
+    try:
+        extra, extra_params = _scope_clause(
+            "national", "", theater=theater, q=q, rule_id=rule_id
+        )
+        where = (
+            f"created_at >= ? AND created_at < ?{extra}"
+            " AND ifnull(exclude_reason, '') IN ('', '重复触发(同一消息)')"
+        )
+        return _rule_totals(conn, where, [start_sql, end_sql, *extra_params])
+    finally:
+        conn.close()
+
+
+def query_meta(root: str, *, db_path: str | None = None) -> dict[str, Any]:
     today = datetime.now(SHANGHAI).date()
     empty = {
         "theaters": [],
@@ -126,7 +195,7 @@ def query_meta(root: str) -> dict[str, Any]:
         "updated_at": None,
         "event_count": 0,
     }
-    conn = _open(root)
+    conn = _open(root, db_path=db_path)
     if conn is None:
         return empty
     try:
@@ -187,6 +256,8 @@ def query_chart(
     end: str | None = None,
     theater: str = "",
     q: str = "",
+    rule_id: str = "",
+    db_path: str | None = None,
 ) -> dict[str, Any]:
     if grain not in {"day", "month", "quarter"}:
         grain = "month"
@@ -214,14 +285,15 @@ def query_chart(
         "id": ident,
         "theater": (theater or "").strip(),
         "q": (q or "").strip(),
+        "rule_id": (rule_id or "").strip(),
         "start": start_d.isoformat(),
         "end": end_d.isoformat(),
     }
-    conn = _open(root)
+    conn = _open(root, db_path=db_path)
     if conn is None:
         return empty
     try:
-        extra, extra_params = _scope_clause(scope, ident, theater=theater, q=q)
+        extra, extra_params = _scope_clause(scope, ident, theater=theater, q=q, rule_id=rule_id)
         base_where = f"created_at >= ? AND created_at < ?{extra}"
         # 计入 = 未被剔除；同一消息命中多条规则时「重复触发」也按各规则计次，但消息数去重
         where = base_where + " AND ifnull(exclude_reason, '') IN ('', '重复触发(同一消息)')"
@@ -265,6 +337,9 @@ def query_chart(
             if row["rule_id"] not in seen:
                 rules_meta.append(row)
                 seen.add(row["rule_id"])
+        target_rule = (rule_id or "").strip()
+        if target_rule:
+            rules_meta = [meta for meta in rules_meta if meta["rule_id"] == target_rule]
 
         series = [
             {
@@ -310,28 +385,7 @@ def query_chart(
             """,
             params,
         ).fetchone()
-        rule_totals = [
-            {
-                "rule_id": row["rule_id"],
-                "rule_name": row["rule_name"] or row["rule_id"],
-                "triggers": int(row["triggers"]),
-                "messages": int(row["messages"]),
-                "rooms": int(row["rooms"]),
-            }
-            for row in conn.execute(
-                f"""
-                SELECT rule_id, MAX(rule_name) AS rule_name,
-                       COUNT(*) AS triggers,
-                       COUNT(DISTINCT msg_id) AS messages,
-                       COUNT(DISTINCT room_id) AS rooms
-                FROM timeout_event
-                WHERE {where}
-                GROUP BY rule_id
-                ORDER BY triggers DESC
-                """,
-                params,
-            )
-        ]
+        rule_totals = _rule_totals(conn, where, params)
         store_rows = [
             {
                 "store": row["store"],
@@ -390,6 +444,7 @@ def query_chart(
             "id": ident,
             "theater": (theater or "").strip(),
             "q": (q or "").strip(),
+            "rule_id": (rule_id or "").strip(),
             "start": start_d.isoformat(),
             "end": end_d.isoformat(),
         }

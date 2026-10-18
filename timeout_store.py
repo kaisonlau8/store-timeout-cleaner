@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
+from urllib.parse import quote
 from typing import Any, Iterable
 
 SCHEMA = """
@@ -70,6 +71,18 @@ CREATE TABLE IF NOT EXISTS timeout_import (
   imported_at TEXT NOT NULL
 );
 """
+
+
+def is_readonly_open_error(exc: BaseException) -> bool:
+    """只读文件系统副本才回退 immutable；locked/损坏等错误继续抛出。"""
+    return "unable to open database file" in str(exc).lower()
+
+
+def connect_ro(db_path: str) -> sqlite3.Connection:
+    """只读打开（用于真实的只读数据副本；immutable 避免创建 -wal/-shm）。"""
+    conn = sqlite3.connect("file:" + quote(db_path) + "?mode=ro&immutable=1", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def connect(db_path: str) -> sqlite3.Connection:

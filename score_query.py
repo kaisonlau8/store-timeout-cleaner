@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -16,7 +17,7 @@ from score_llm import apply_verdicts, cache_get, llm_configured, review_status
 from score_math import MERGE_MAP, StoreInput, score_stores
 from score_rules import classify_events
 from timeout_excel import _cell, _msg_id, _parse_trigger_time
-from timeout_store import connect
+from timeout_store import connect, connect_ro, is_readonly_open_error
 from date_ranges import parse_range
 
 log = logging.getLogger(__name__)
@@ -40,9 +41,18 @@ def last_quarter(today: date) -> tuple[date, date]:
     return start, end
 
 
-def build_report(root: str, start: date, end: date, *, use_llm: bool | None = None) -> dict[str, Any]:
-    events, unmatched, missing_message, llm_meta = prepare_events(root, start, end, use_llm=use_llm)
-    stores = _score_from_events(root, events)
+def build_report(
+    root: str,
+    start: date,
+    end: date,
+    *,
+    use_llm: bool | None = None,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    events, unmatched, missing_message, llm_meta = prepare_events(
+        root, start, end, use_llm=use_llm, db_path=db_path
+    )
+    stores = _score_from_events(root, events, db_path=db_path)
     mu = stores[0]["mu"] if stores else 0.0
     ranked = sum(1 for row in stores if row["kind"] in ("", "merge"))
     return {
@@ -59,8 +69,77 @@ def build_report(root: str, start: date, end: date, *, use_llm: bool | None = No
     }
 
 
-def load_rule_events(root: str, start: date, end: date) -> tuple[list[dict[str, Any]], int, int]:
-    events, unmatched, missing, _meta = prepare_events(root, start, end, use_llm=False, kpi_only=False)
+def build_theater_report(
+    root: str,
+    theater: str,
+    start: date,
+    end: date,
+    *,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """按战区聚合评分行；KPI 数来自 build_report，与 /score 的战区筛选完全同口径。
+
+    仅展示数复用 /timeout 规则卡的同一查询（timeout_query.query_rule_totals），
+    只看 counts_for_kpi=0 的规则触发次数，避免自己重算导致与超时页不一致。
+    """
+    name = (theater or "").strip()
+    report = build_report(root, start, end, db_path=db_path)
+    rows = [row for row in report.get("stores") or [] if (row.get("theater") or "").strip() == name]
+    display_only: int | None = 0
+    display_only_rules: list[str] = []
+    display_only_state = "none"
+    if name:
+        try:
+            from timeout_algo import non_kpi_rules
+            from timeout_query import query_rule_totals
+
+            non_kpi_ids, non_kpi_names = non_kpi_rules(root, db_path=db_path)
+            display_only_rules = sorted(non_kpi_names or non_kpi_ids)
+            if non_kpi_ids:
+                totals = query_rule_totals(
+                    root,
+                    start=start.isoformat(),
+                    end=end.isoformat(),
+                    theater=name,
+                    db_path=db_path,
+                )
+                display_only = sum(
+                    int(row.get("triggers") or 0)
+                    for row in totals
+                    if (row.get("rule_id") or "") in non_kpi_ids
+                )
+                display_only_state = "ok"
+            else:
+                display_only = 0
+                display_only_state = "none"
+        except Exception:
+            log.exception(
+                "读取战区仅展示规则统计失败 theater=%s start=%s end=%s",
+                name,
+                start.isoformat(),
+                end.isoformat(),
+            )
+            display_only = None
+            display_only_state = "error"
+    return {
+        "theater": name,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "stores": rows,
+        "kpi_counted": sum(int(row.get("valid") or 0) for row in rows),
+        "display_only": display_only,
+        "display_only_rules": display_only_rules,
+        "display_only_state": display_only_state,
+        "store_count": len(rows),
+    }
+
+
+def load_rule_events(
+    root: str, start: date, end: date, *, db_path: str | None = None
+) -> tuple[list[dict[str, Any]], int, int]:
+    events, unmatched, missing, _meta = prepare_events(
+        root, start, end, use_llm=False, kpi_only=False, db_path=db_path
+    )
     return events, unmatched, missing
 
 
@@ -71,8 +150,11 @@ def prepare_events(
     *,
     use_llm: bool | None = None,
     kpi_only: bool = True,
+    db_path: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, int, dict[str, Any]]:
-    events, unmatched, missing_message = _classified_events(root, start, end, kpi_only=kpi_only)
+    events, unmatched, missing_message = _classified_events(
+        root, start, end, kpi_only=kpi_only, db_path=db_path
+    )
     pending = _pending_messages(events)
     verdicts = cache_get(root, pending)
     available = llm_configured(root)
@@ -97,10 +179,13 @@ def store_detail(
     end: date,
     *,
     use_llm: bool | None = None,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
-    report = build_report(root, start, end, use_llm=use_llm)
+    report = build_report(root, start, end, use_llm=use_llm, db_path=db_path)
     row = next((item for item in report["stores"] if item["name"] == store), None)
-    events, _, _, _ = prepare_events(root, start, end, use_llm=report["llm_on"])
+    events, _, _, _ = prepare_events(
+        root, start, end, use_llm=report["llm_on"], db_path=db_path
+    )
     names = {store}
     shared_from: set[str] = set()
     target = MERGE_MAP.get(store)
@@ -151,7 +236,9 @@ def _sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(rows, key=key)
 
 
-def _score_from_events(root: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _score_from_events(
+    root: str, events: list[dict[str, Any]], *, db_path: str | None = None
+) -> list[dict[str, Any]]:
     counts: dict[str, dict[str, int]] = {}
     for ev in events:
         name = (ev.get("store") or "").strip()
@@ -165,7 +252,7 @@ def _score_from_events(root: str, events: list[dict[str, Any]]) -> list[dict[str
         elif not reason:
             bucket["valid"] += 1
 
-    directory = _store_directory(root)
+    directory = _store_directory(root, db_path=db_path)
     inputs: list[StoreInput] = []
     seen: set[str] = set()
     for name, info in directory.items():
@@ -224,8 +311,8 @@ def _pending_messages(events: list[dict[str, Any]]) -> list[str]:
     return texts
 
 
-def _store_directory(root: str) -> dict[str, dict[str, Any]]:
-    conn = _open(root)
+def _store_directory(root: str, *, db_path: str | None = None) -> dict[str, dict[str, Any]]:
+    conn = _open(root, db_path=db_path)
     if conn is None:
         return {}
     try:
@@ -253,14 +340,19 @@ def _store_directory(root: str) -> dict[str, dict[str, Any]]:
 
 
 def _classified_events(
-    root: str, start: date, end: date, *, kpi_only: bool = True
+    root: str,
+    start: date,
+    end: date,
+    *,
+    kpi_only: bool = True,
+    db_path: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """kpi_only=True（评分/KPI/导出）时只取 counts_for_kpi=1 的规则命中；超时机器人浏览页用 False。"""
     skip: set[str] = set()
     if kpi_only:
         from timeout_algo import non_kpi_rules
-        skip = non_kpi_rules(root)[0]
-    conn = _open(root)
+        skip = non_kpi_rules(root, db_path=db_path)[0]
+    conn = _open(root, db_path=db_path)
     if conn is None:
         return [], 0, 0
     try:
@@ -343,8 +435,13 @@ def _message_index(root: str) -> dict[str, str]:
     return index
 
 
-def _open(root: str):
-    path = os.path.join(root, "timeout.db")
+def _open(root: str, *, db_path: str | None = None):
+    path = db_path or os.path.join(root, "timeout.db")
     if not os.path.isfile(path):
         return None
-    return connect(path)
+    try:
+        return connect(path)
+    except sqlite3.OperationalError as exc:
+        if not is_readonly_open_error(exc):
+            raise
+        return connect_ro(path)

@@ -1,6 +1,37 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><title>日期范围错误</title><style>{{ ds_css()|safe }}</style></head>
-<body>{{ ds_sprite()|safe }}<main class="container" data-ds-back="{{ request.path }}{% if request.path == '/score/store' %}?name={{ request.args.get('name','')|urlencode }}{% endif %}" data-ds-back-label="默认日期" style="max-width:720px;margin:48px auto;padding:16px">
-<header class="ant-page-header"><h1>日期范围错误</h1></header>
-<div class="ant-alert ant-alert-error" role="alert">{{ error }}。请修改链接中的日期，或返回本月范围。</div>
-</main><script>{{ ds_cards()|safe }}</script></body></html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>日期范围错误</title>
+    <link rel="icon" href="{{ url_for('static', filename='brand/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='brand/icon-16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='brand/icon-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='brand/icon-180.png') }}">
+    <meta name="theme-color" content="#1677ff">
+    <style>{{ ds_css()|safe }}</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+</head>
+<body>
+    {{ ds_sprite()|safe }}
+    <header class="ant-header"><div class="in">
+        <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='brand/logo-blue.png') }}" srcset="{{ url_for('static', filename='brand/logo-blue@2x.png') }} 2x" alt="猛士" height="28">超时机器人统计</a>
+        {% include '_nav.html' %}
+        <span class="cl-meta">日期范围错误</span>
+    </div></header>
+    <div class="container">
+        <header class="ant-page-header">
+            <div class="ant-page-header-heading">
+                <h1>日期范围错误</h1>
+                <div class="ant-page-header-sub">链接里的日期区间无效，页面没有重新计算任何数据。</div>
+            </div>
+        </header>
+        <div class="ant-alert ant-alert-error" role="alert">{{ error }}。请修改链接中的日期，或使用下方按钮重新打开。</div>
+        <div class="ant-page-header-actions" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+            <a class="ant-btn ant-btn-primary" href="{{ retry_href }}">用默认日期重新打开</a>
+            <a class="ant-btn" href="/">返回拉群覆盖</a>
+        </div>
+    </div>
+    <script>{{ ds_cards()|safe }}</script>
+</body>
+</html>

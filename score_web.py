@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, render_template, request
 
+from coverage_query import theater_href
 from list_filters import row_visible
 from score_export import stores_to_csv, stores_to_xlsx
 from score_llm import llm_configured, maybe_autostart_review, review_status, start_review_job
 from score_query import build_report, parse_range, store_detail
 from date_ranges import install_date_ranges
+
+
+def _db_path(root: str) -> str:
+    return os.environ.get("CLEANER_DB_PATH") or os.path.join(root, "timeout.db")
 
 
 def _view_report(report: dict, theater: str | None, query: str | None) -> dict:
@@ -63,10 +69,14 @@ def _with_auto_review(root: str, start, end, build):
 
 def register_score(app: Flask, root: str) -> None:
     install_date_ranges(app)
+    app.jinja_env.globals.setdefault("theater_href", theater_href)
     @app.route("/score")
     def score_page():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
-        report = _with_auto_review(root, start, end, lambda: build_report(root, start, end))
+        db_path = _db_path(root)
+        report = _with_auto_review(
+            root, start, end, lambda: build_report(root, start, end, db_path=db_path)
+        )
         report = _view_report(report, request.args.get("theater"), request.args.get("q"))
         return render_template("score.html", report=report)
 
@@ -75,7 +85,12 @@ def register_score(app: Flask, root: str) -> None:
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
         name = (request.args.get("name") or "").strip()
         detail = (
-            _with_auto_review(root, start, end, lambda: store_detail(root, name, start, end))
+            _with_auto_review(
+                root,
+                start,
+                end,
+                lambda: store_detail(root, name, start, end, db_path=_db_path(root)),
+            )
             if name
             else None
         )
@@ -90,7 +105,7 @@ def register_score(app: Flask, root: str) -> None:
     def score_export_csv():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
         report = _view_report(
-            build_report(root, start, end),
+            build_report(root, start, end, db_path=_db_path(root)),
             request.args.get("theater"),
             request.args.get("q"),
         )
@@ -105,7 +120,7 @@ def register_score(app: Flask, root: str) -> None:
     def score_export_xlsx():
         start, end = parse_range(request.args.get("start"), request.args.get("end"))
         report = _view_report(
-            build_report(root, start, end),
+            build_report(root, start, end, db_path=_db_path(root)),
             request.args.get("theater"),
             request.args.get("q"),
         )

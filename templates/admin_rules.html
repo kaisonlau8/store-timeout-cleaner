@@ -10,7 +10,7 @@
     <style>{{ ds_css()|safe }}</style>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/antd-feedback.css') }}?v=2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-rules.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin-rules.css') }}?v=4">
 </head>
 <body>
     {{ ds_sprite()|safe }}
@@ -81,8 +81,21 @@
             </div>
         </form>
     </div>
+    <div class="ant-modal-mask kpi-confirm-mask" id="kpi-confirm-mask" hidden></div>
+    <div class="ant-modal ant-modal-confirm kpi-confirm" id="kpi-confirm" role="dialog" aria-modal="true" aria-labelledby="kpi-confirm-title" hidden>
+        <div class="ant-modal-content">
+            <div class="ant-modal-body">
+                <div class="ant-modal-confirm-title" id="kpi-confirm-title">确认计入 KPI / 评分？</div>
+                <div class="ant-modal-confirm-content">KPI 只统计 30 分钟规则，勾选后此规则将计入评分。</div>
+            </div>
+            <div class="ant-modal-confirm-btns">
+                <button type="button" class="ant-btn" id="kpi-confirm-cancel">取消</button>
+                <button type="button" class="ant-btn ant-btn-primary" id="kpi-confirm-ok">确定</button>
+            </div>
+        </div>
+    </div>
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
-    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=4"></script>
+    <script src="{{ url_for('static', filename='js/admin-rules.js') }}?v=7"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

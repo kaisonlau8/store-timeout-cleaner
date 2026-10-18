@@ -7,7 +7,7 @@ import os
 import re
 import threading
 from datetime import date, datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request
@@ -19,8 +19,11 @@ from coverage_query import (
     collect_store_names,
     coverage_back_href,
     coverage_store_href,
+    directory_theaters,
     load_directory,
     store_coverage_detail,
+    theater_coverage,
+    theater_href,
 )
 from group_keyword import (
     GroupListError,
@@ -32,6 +35,7 @@ from group_keyword import (
 from group_query import group_events, group_info, local_context
 from scrm_client import ScrmError
 from scrm_sync import sync_from_scrm
+from score_query import build_theater_report
 from score_web import register_score
 import timeout_algo
 from timeout_query import query_chart, query_meta
@@ -59,6 +63,7 @@ app.jinja_env.globals["ds_css"] = lambda: _ds("antd-lite.css")
 app.jinja_env.globals["ds_sprite"] = lambda: _ds("sprite.svg")
 app.jinja_env.globals["ds_cards"] = lambda: _ds("cards.js")
 app.jinja_env.globals["coverage_store_href"] = coverage_store_href
+app.jinja_env.globals["theater_href"] = theater_href
 
 # --- m-hero SSO (Casdoor): inert unless MHERO_AUTH[_CLEANER]=audit|on is set (see docs/SSO_CASDOOR.md) ---
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
@@ -188,7 +193,7 @@ NON_KPI_TAG = '<span class="ant-tag ant-tag-warning kpi-off" title="该规则只
 @app.context_processor
 def _inject_kpi():
     try:
-        _keys, names = timeout_algo.non_kpi_rules(ROOT)
+        _keys, names = timeout_algo.non_kpi_rules(ROOT, db_path=_db_path())
     except Exception:
         names = set()
     return {"non_kpi_names": sorted(names)}
@@ -216,7 +221,7 @@ def _minute_time(value):
 def _kpi_tag(rule_name):
     from markupsafe import Markup
     try:
-        names = timeout_algo.non_kpi_rules(ROOT)[1]
+        names = timeout_algo.non_kpi_rules(ROOT, db_path=_db_path())[1]
     except Exception:
         return Markup("")
     parts = [n.strip() for n in str(rule_name or "").split(" / ")]
@@ -362,6 +367,83 @@ def index():
     return render_template("index.html", has_data=data is not None, data=data, coverage=coverage)
 
 
+@app.route("/theater/<theater>")
+def theater_page(theater):
+    start, end = g.date_range
+    db_path = _db_path()
+    report = build_theater_report(ROOT, theater, start, end, db_path=db_path)
+    known = set(directory_theaters(db_path)) | {
+        (row.get("theater") or "").strip() for row in report.get("stores") or [] if (row.get("theater") or "").strip()
+    }
+    back_href = "/?" + urlencode(
+        {"theater": theater, "start": start.isoformat(), "end": end.isoformat()}
+    )
+    if theater not in known:
+        return (
+            render_template(
+                "theater.html",
+                theater=theater,
+                not_found=True,
+                back_href=back_href,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                nav_active="coverage",
+            ),
+            404,
+        )
+
+    coverage = theater_coverage(db_path, theater)
+    rows_by_name = {
+        row["name"]: {
+            "name": row["name"],
+            "group_count": int(row["group_count"] or 0),
+            "robot_count": int(row["robot_count"] or 0),
+            "kpi_counted": 0,
+        }
+        for row in coverage["stores"]
+    }
+    for row in report.get("stores") or []:
+        name = row.get("name") or ""
+        if not name:
+            continue
+        item = rows_by_name.setdefault(
+            name, {"name": name, "group_count": 0, "robot_count": 0, "kpi_counted": 0}
+        )
+        item["kpi_counted"] = int(row.get("valid") or 0)
+    rows = list(rows_by_name.values())
+    for row in rows:
+        groups = int(row["group_count"] or 0)
+        robots = int(row["robot_count"] or 0)
+        row["coverage"] = f"{robots / groups * 100:.1f}%" if groups else "—"
+    rows.sort(key=lambda row: (-row["kpi_counted"], -row["group_count"], row["name"]))
+    summary = {
+        "store_count": len(rows),
+        "group_count": int(coverage["group_count"]),
+        "robot_count": int(coverage["robot_count"]),
+        "kpi_counted": int(report.get("kpi_counted") or 0),
+        "display_only": report.get("display_only"),
+        "display_only_rules": list(report.get("display_only_rules") or []),
+        "display_only_state": report.get("display_only_state") or "none",
+    }
+    summary["coverage"] = (
+        f"{summary['robot_count'] / summary['group_count'] * 100:.1f}%"
+        if summary["group_count"]
+        else "—"
+    )
+    return render_template(
+        "theater.html",
+        theater=theater,
+        not_found=False,
+        back_href=back_href,
+        start=start.isoformat(),
+        end=end.isoformat(),
+        summary=summary,
+        rows=rows,
+        unassigned=coverage["unassigned"],
+        nav_active="coverage",
+    )
+
+
 @app.route("/coverage/store")
 def coverage_store_page():
     name = (request.args.get("name") or "").strip()
@@ -428,10 +510,53 @@ def _export_allowed(data):
     )
 
 
+def _rule_name(rule_id: str) -> str:
+    rule_id = (rule_id or "").strip()
+    db_path = _db_path()
+    if not rule_id or not os.path.isfile(db_path):
+        return ""
+    try:
+        conn = open_ro(db_path)
+    except Exception:
+        return ""
+    try:
+        row = conn.execute(
+            "SELECT rule_name FROM timeout_rule WHERE rule_id=? LIMIT 1", (rule_id,)
+        ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT rule_name FROM timeout_event WHERE rule_id=? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (rule_id,),
+            ).fetchone()
+    except Exception:
+        return ""
+    finally:
+        conn.close()
+    return (row["rule_name"] or "") if row is not None else ""
+
+
 @app.route("/timeout")
 def timeout_page():
     data = load_data()
-    return render_template("timeout.html", has_data=data is not None, data=data, start=g.date_range[0].isoformat(), end=g.date_range[1].isoformat())
+    rule_id = (request.args.get("rule_id") or "").strip()[:120]
+    rule_name = _rule_name(rule_id) if rule_id else ""
+    clear_pairs = [
+        (key, value)
+        for key, value in request.args.items(multi=True)
+        if key != "rule_id"
+    ]
+    clear_href = request.path + ("?" + urlencode(clear_pairs) if clear_pairs else "")
+    return render_template(
+        "timeout.html",
+        has_data=data is not None,
+        data=data,
+        start=g.date_range[0].isoformat(),
+        end=g.date_range[1].isoformat(),
+        rule_id=rule_id,
+        rule_name=rule_name or rule_id,
+        clear_rule_href=clear_href,
+    )
 
 
 @app.route("/parse")
@@ -511,7 +636,7 @@ def export_all_csv():
 
 @app.route("/api/timeout/meta")
 def timeout_meta_api():
-    return jsonify(query_meta(ROOT))
+    return jsonify(query_meta(ROOT, db_path=_db_path()))
 
 
 @app.route("/api/timeout/chart")
@@ -525,6 +650,8 @@ def timeout_chart_api():
         end=g.date_range[1].isoformat(),
         theater=request.args.get("theater") or "",
         q=request.args.get("q") or "",
+        rule_id=request.args.get("rule_id") or "",
+        db_path=_db_path(),
     )
     return jsonify(payload)
 
@@ -777,6 +904,8 @@ def timeout_export_csv():
         end=g.date_range[1].isoformat(),
         theater=request.args.get("theater") or "",
         q=request.args.get("q") or "",
+        rule_id=request.args.get("rule_id") or "",
+        db_path=_db_path(),
     )
     rules = payload.get("totals", {}).get("rules") or []
     output = io.StringIO()
