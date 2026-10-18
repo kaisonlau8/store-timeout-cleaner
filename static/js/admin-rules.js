@@ -45,9 +45,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const logHref = ruleLogHref(c.rule_key);
             const hist = g.history.length > 1 ? '<div class="hist">历史版本：' + g.history.slice(1).map((h) =>
                 esc(h.effective_from + ' ~ ' + (h.effective_to || '…') + ' · ' + h.minutes + ' 分钟 · ' + h.start_time + '-' + h.end_time + (h.enabled ? '' : ' · 停用'))).join('<br>') + '</div>' : '';
-            return '<tr><td data-card-title><strong>' + esc(c.name) + '</strong>' + (c.note ? '<div class="hist">' + esc(c.note) + '</div>' : '') + hist + '</td>' +
-                '<td>' + esc(c.minutes) + ' 分钟</td><td>' + esc(days(c.days)) + '</td><td>' + esc(c.start_time + ' - ' + c.end_time) + '</td>' +
-                '<td>' + esc(c.effective_from) + ' 起' + (c.effective_to ? '<br>至 ' + esc(c.effective_to) : '') + '</td>' +
+            return '<tr><td data-card-title><strong>' + esc(c.name) + '</strong>' + (c.note ? '<div class="hist ds-text-pretty">' + esc(c.note) + '</div>' : '') + hist + '</td>' +
+                '<td><span class="ds-nowrap">' + esc(c.minutes) + ' 分钟</span></td><td>' + esc(days(c.days)) + '</td><td><span class="ds-nowrap">' + esc(c.start_time + ' - ' + c.end_time) + '</span></td>' +
+                '<td><span class="ds-nowrap">' + esc(c.effective_from) + ' 起</span>' + (c.effective_to ? '<br>至 <span class="ds-nowrap">' + esc(c.effective_to) + '</span>' : '') + '</td>' +
                 '<td>' + (c.enabled ? '<span class="ant-tag ant-tag-success">启用</span>' : '<span class="ant-tag">停用</span>') + '</td>' +
                 '<td>' + (c.counts_for_kpi ? '<span class="ant-tag ant-tag-processing">计入 KPI</span>' : '<span class="ant-tag ant-tag-warning kpi-off">仅展示，不计 KPI</span>') + '</td>' +
                 '<td><div class="ops"><a class="ant-btn ant-btn-sm" data-rule-log="' + i + '" href="' + esc(logHref) + '"><svg class="ai" aria-hidden="true"><use href="#i-right"/></svg>查看触发记录</a>' +

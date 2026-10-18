@@ -23,6 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/"/g, '&quot;');
     }
 
+    function noBreakTail(text) {
+        return (typeof window !== 'undefined' && window.DS) ? window.DS.noBreakTail(text) : escapeHtml(text);
+    }
+
     function stateFromUrl() {
         const params = new URLSearchParams(location.search);
         return {
@@ -105,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tbody.innerHTML = rows.map((row) =>
             '<tr class="theater-row" role="button" tabindex="0" data-theater="' + escapeHtml(row.theater) + '" title="点击或按 Enter 按该战区筛选">' +
-            '<td data-label="战区" data-card-title>' + escapeHtml(row.theater) + '</td>' +
+            '<td data-label="战区" data-card-title>' + noBreakTail(row.theater) + '</td>' +
             '<td data-label="群数">' + row.group_count + '</td>' +
             '<td data-label="门店数">' + row.store_count + '</td></tr>'
         ).join('');
@@ -121,10 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         tbody.innerHTML = rows.map((row, idx) => {
             const theater = row.theater
-                ? '<td data-label="战区"><button type="button" class="theater-chip" data-theater="' + escapeHtml(row.theater) + '" title="点击按该战区筛选">' + escapeHtml(row.theater) + '</button></td>'
+                ? '<td data-label="战区"><button type="button" class="theater-chip" data-theater="' + escapeHtml(row.theater) + '" title="点击按该战区筛选">' + noBreakTail(row.theater) + '</button></td>'
                 : '<td data-label="战区"><span class="cl-muted">—</span></td>';
             const store = row.store
-                ? '<a href="/store/' + encodeURIComponent(row.store) + '">' + escapeHtml(row.store) + '</a>'
+                ? '<a href="/store/' + encodeURIComponent(row.store) + '">' + noBreakTail(row.store) + '</a>'
                 : escapeHtml(row.store || '');
             return '<tr><td data-label="排名">' + (idx + 1) + '</td>' +
                 '<td data-label="门店" data-card-title>' + store + '</td>' +
@@ -143,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         tbody.innerHTML = rows.map((row) => {
-            const name = escapeHtml(row.group_name);
+            const name = noBreakTail(row.group_name);
             const group = row.room_id
                 ? '<a class="sd-link" href="/group/' + encodeURIComponent(row.room_id) + '">' + name + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>'
                 : name;

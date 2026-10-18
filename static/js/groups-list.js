@@ -16,6 +16,10 @@
         });
     }
 
+    function noBreakTail(value) {
+        return (typeof window !== 'undefined' && window.DS) ? window.DS.noBreakTail(value) : esc(value);
+    }
+
     function currentParams() {
         return new URLSearchParams(location.search);
     }
@@ -107,9 +111,9 @@
         tbody.innerHTML = rows.map(function (row) {
             var roomId = row.room_id || '';
             var groupName = row.group_name || roomId || '（未命名群）';
-            var groupCell = '<a data-ds-link="off" href="/group/' + encodeURIComponent(roomId) + '">' + esc(groupName) + '</a>';
+            var groupCell = '<a data-ds-link="off" href="/group/' + encodeURIComponent(roomId) + '">' + noBreakTail(groupName) + '</a>';
             var storeCell = row.store
-                ? '<a data-ds-link="off" href="/store/' + encodeURIComponent(row.store) + '">' + esc(row.store) + '</a>'
+                ? '<a data-ds-link="off" href="/store/' + encodeURIComponent(row.store) + '">' + noBreakTail(row.store) + '</a>'
                 : '<span class="cl-muted">未归店</span>';
             var theaterCell = row.theater
                 ? '<a class="store-link" href="' + theaterHref(row.theater) + '">' + esc(row.theater) + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>'

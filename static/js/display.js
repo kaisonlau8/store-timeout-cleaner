@@ -27,6 +27,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/"/g, '&quot;');
     }
 
+    function noBreakTail(text) {
+        return (typeof window !== 'undefined' && window.DS) ? window.DS.noBreakTail(text) : escapeHtml(text);
+    }
+
     function listFilter() {
         return window.LIST_FILTER || { theater: '', q: '' };
     }
@@ -74,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const body = rows.length
             ? rows.map((row, idx) =>
                 '<tr><td>' + (idx + 1) + '</td>' +
-                '<td data-card-title><a class="store-link" href="' + coverageStoreHref(row.name) + '">' + escapeHtml(row.name) + '</a></td>' +
+                '<td data-card-title><a class="store-link" href="' + coverageStoreHref(row.name) + '">' + noBreakTail(row.name) + '</a></td>' +
                 '<td>' + (row.theater
                     ? '<a class="store-link" href="' + theaterPageHref(row.theater) + '">' + escapeHtml(row.theater) + '<svg class="ai" aria-hidden="true"><use href="#i-right"/></svg></a>'
                     : '—') + '</td>' +
