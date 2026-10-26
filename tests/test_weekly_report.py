@@ -90,18 +90,24 @@ def test_timeout_and_excel(tmp_path):
         book.close()
     brief = wr.render_brief(report, "/weekly-reports/test.xlsx")
     assert "本周新建客户群 1 个" in brief and "已拉机器人 1" in brief and "未拉 0" in brief
-    assert "≥30分钟超时触发 3 条" in brief and "有效 2" in brief
-    assert "chat_time_out>=30" in brief
-    # 每个标准战区单独一行（含 0），不得挤成一行分号列表
-    for name in wr.STANDARD_THEATERS:
+    assert "超时有效触发 2 条" in brief
+    assert "规则剔除后有效" not in brief
+    assert "chat_time_out" not in brief
+    assert "明细下载" not in brief
+    # 简报战区逐行（不含大客户/未归属）；有效为 0 的战区超时行省略
+    for name in wr.BRIEF_THEATERS:
         assert f"{name}：新建" in brief
-        assert f"{name}：触发" in brief
+    assert "大客户大区" not in brief and "未归属战区" not in brief
     assert "华东：新建1（已拉1/未拉0）。" in brief
-    assert "华东：触发3（有效2）。" in brief
+    assert "华东：有效2。" in brief
+    assert "触发" not in brief or "有效触发" in brief
     assert "武汉特区：新建0（已拉0/未拉0）。" in brief
-    assert "分战区：" not in brief
-    assert brief.count("\n") >= 20
-    assert "未提供数据" in wr.render_brief(wr.build_weekly_report(WEEK, [], []), "url")
+    assert "武汉特区：有效" not in brief  # 0 有效省略
+    card = wr.build_weekly_card(brief, "https://store-timeout-cleaner.41box.com/weekly-reports/test.xlsx")
+    assert card["elements"][1]["actions"][0]["tag"] == "button"
+    assert card["elements"][1]["actions"][0]["url"].endswith("test.xlsx")
+    assert card["elements"][1]["actions"][0]["text"]["content"] == "下载明细"
+    assert "未提供数据" in wr.render_brief(wr.build_weekly_report(WEEK, [], []))
 
 
 @pytest.fixture
@@ -110,7 +116,7 @@ def inputs(tmp_path, monkeypatch):
     rows.write_text(json.dumps([group(WEEK)]))
     metrics = tmp_path / "metrics.jsonl"
     metrics.write_text("")
-    monkeypatch.setattr(wr, "send_chat_text", lambda *args: pytest.fail("dry-run 不得发送"))
+    monkeypatch.setattr(wr, "send_chat_card", lambda *args: pytest.fail("dry-run 不得发送"))
     return dict(chat_store_json=rows, metrics_jsonl=metrics, state_path=tmp_path / "state.json", out_dir=tmp_path / "out")
 
 
@@ -119,7 +125,7 @@ def test_dry_run_then_send_and_dedupe(inputs, monkeypatch):
     assert result["dry_run"] and (inputs["out_dir"] / "brief.txt").is_file()
     assert state.load_state(inputs["state_path"])[WEEK]["status"] == "dry_run"
     calls = []
-    monkeypatch.setattr(wr, "send_chat_text", lambda *args: calls.append(args) or {"message_id": "mock"})
+    monkeypatch.setattr(wr, "send_chat_card", lambda *args: calls.append(args) or {"message_id": "mock"})
     wr.run_weekly_report(WEEK, dry_run=False, **inputs)
     assert len(calls) == 1
     assert wr.run_weekly_report(WEEK, dry_run=False, **inputs)["skip_reason"] == "sent"
@@ -133,7 +139,7 @@ def test_dry_run_then_send_and_dedupe(inputs, monkeypatch):
 def test_sending_timeout(inputs, monkeypatch, at, blocked):
     previous = {"status": "sending", "at": at}
     state.save_state(inputs["state_path"], {WEEK: previous})
-    monkeypatch.setattr(wr, "send_chat_text", lambda *args: {})
+    monkeypatch.setattr(wr, "send_chat_card", lambda *args: {})
     result = wr.run_weekly_report(WEEK, dry_run=False, **inputs)
     assert result["skipped"] == blocked
     if blocked:
@@ -150,7 +156,7 @@ def test_sending_current_and_send_failure(inputs, monkeypatch):
     def fail(*args):
         raise RuntimeError("mock failure")
 
-    monkeypatch.setattr(wr, "send_chat_text", fail)
+    monkeypatch.setattr(wr, "send_chat_card", fail)
     with pytest.raises(RuntimeError):
         wr.run_weekly_report(WEEK, dry_run=False, force=True, **inputs)
     assert state.load_state(inputs["state_path"])[WEEK] == previous
@@ -196,7 +202,7 @@ def test_sent_write_failure_preserves_sending(inputs, monkeypatch):
         real_save(path, data)
 
     monkeypatch.setattr(wr, "save_state", save)
-    monkeypatch.setattr(wr, "send_chat_text", lambda *args: {})
+    monkeypatch.setattr(wr, "send_chat_card", lambda *args: {})
     with pytest.raises(OSError):
         wr.run_weekly_report(WEEK, dry_run=False, **inputs)
     assert state.load_state(inputs["state_path"])[WEEK]["status"] == "sending"
@@ -310,23 +316,28 @@ def test_feishu_client_uses_mocked_transport(monkeypatch):
 
     def fake_open(request, timeout):
         calls.append(request)
-        payload = ({"code": 0, "tenant_access_token": "mock-token"} if len(calls) == 1
+        payload = ({"code": 0, "tenant_access_token": "mock-token"} if len(calls) % 2 == 1
                    else {"code": 0, "data": {"message_id": "mock-id"}})
         return io.BytesIO(json.dumps(payload).encode())
 
     monkeypatch.setattr(fc.urllib.request, "urlopen", fake_open)
     assert fc.send_chat_text("mock-chat", "测试") == {"message_id": "mock-id"}
-    assert len(calls) == 2
-    assert json.loads(calls[0].data)["app_secret"] == "test-secret"
-    assert calls[1].get_header("Authorization") == "Bearer mock-token"
     assert json.loads(json.loads(calls[1].data)["content"])["text"] == "测试"
+    card = {"config": {"wide_screen_mode": True}, "elements": []}
+    assert fc.send_chat_card("mock-chat", card) == {"message_id": "mock-id"}
+    body = json.loads(calls[3].data)
+    assert body["msg_type"] == "interactive"
+    assert json.loads(body["content"]) == card
+    assert calls[3].get_header("Authorization") == "Bearer mock-token"
 
     def fail(*args, **kwargs):
         raise urllib.error.URLError("test-secret mock-token")
 
     monkeypatch.setattr(fc.urllib.request, "urlopen", fail)
     with pytest.raises(RuntimeError) as exc:
-        fc.send_chat_text("mock-chat", "测试")
+        fc.send_chat_card("mock-chat", card)
     assert "test-secret" not in str(exc.value) and "mock-token" not in str(exc.value)
     with pytest.raises(ValueError):
-        fc.send_chat_text("", "测试")
+        fc.send_chat_card("", card)
+    with pytest.raises(ValueError):
+        fc.send_chat_card("mock-chat", "not-a-card")

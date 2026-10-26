@@ -32,17 +32,33 @@ def _post(path, payload, token=None):
     return result
 
 
-def send_chat_text(chat_id, text):
-    if not chat_id or not chat_id.strip():
-        raise ValueError("缺少飞书 chat_id")
+def _tenant_token():
     app_id = os.environ.get("FEISHU_APP_ID") or os.environ.get("APP_ID")
     secret = os.environ.get("FEISHU_APP_SECRET") or os.environ.get("APP_SECRET")
     if not app_id or not secret:
         raise RuntimeError("缺少飞书应用环境变量")
-    token = _post("/auth/v3/tenant_access_token/internal", {
+    return _post("/auth/v3/tenant_access_token/internal", {
         "app_id": app_id, "app_secret": secret,
     })["tenant_access_token"]
+
+
+def send_chat_text(chat_id, text):
+    if not chat_id or not chat_id.strip():
+        raise ValueError("缺少飞书 chat_id")
     return _post("/im/v1/messages?receive_id_type=chat_id", {
         "receive_id": chat_id.strip(), "msg_type": "text",
         "content": json.dumps({"text": text}, ensure_ascii=False),
-    }, token).get("data") or {}
+    }, _tenant_token()).get("data") or {}
+
+
+def send_chat_card(chat_id, card):
+    """发送 interactive 消息卡片（msg_type=interactive）。card 为卡片 JSON 对象。"""
+    if not chat_id or not chat_id.strip():
+        raise ValueError("缺少飞书 chat_id")
+    if not isinstance(card, dict):
+        raise ValueError("飞书卡片必须是对象")
+    return _post("/im/v1/messages?receive_id_type=chat_id", {
+        "receive_id": chat_id.strip(),
+        "msg_type": "interactive",
+        "content": json.dumps(card, ensure_ascii=False),
+    }, _tenant_token()).get("data") or {}

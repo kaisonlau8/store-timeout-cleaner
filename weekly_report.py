@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
-from feishu_client import send_chat_text
+from feishu_client import send_chat_card
 from weekly_report_state import atomic_write, load_state, report_lock, save_state
 
 ROOT = Path(__file__).resolve().parent
@@ -36,6 +36,9 @@ STANDARD_THEATERS = (
     "大客户大区",
     "未归属战区",
 )
+# 飞书简报不展示、不计入合计的战区（Excel 仍可保留）。
+BRIEF_EXCLUDED_THEATERS = frozenset({"大客户大区", "未归属战区"})
+BRIEF_THEATERS = tuple(name for name in STANDARD_THEATERS if name not in BRIEF_EXCLUDED_THEATERS)
 THEATER_ALIASES = {
     "未知": "未归属战区",
     "未知战区": "未归属战区",
@@ -206,35 +209,49 @@ def _canon_theater(name):
     return THEATER_ALIASES.get(name, name)
 
 
-def _theater_order(names):
-    """标准战区固定顺序在前，其余按名称排在后。"""
+def _theater_order(names, *, for_brief=False):
+    """标准战区固定顺序在前，其余按名称排在后。简报可排除大客户/未归属。"""
+    base = BRIEF_THEATERS if for_brief else STANDARD_THEATERS
+    excluded = BRIEF_EXCLUDED_THEATERS if for_brief else frozenset()
     seen = set()
     ordered = []
-    for name in STANDARD_THEATERS:
+    for name in base:
         if name in names and name not in seen:
             ordered.append(name)
             seen.add(name)
     for name in sorted(names):
-        if name not in seen:
-            ordered.append(name)
-            seen.add(name)
+        if name in excluded or name in seen:
+            continue
+        ordered.append(name)
+        seen.add(name)
     return ordered
 
 
-def render_brief(report, download_url):
-    """飞书简报：全国合计后，每个战区单独一行（含 0），覆盖标准战区清单。"""
-    new_n = len(report["new_groups"])
-    robot_n = int(report["new_robot_groups"])
-    no_robot_n = int(report.get("new_no_robot_groups", new_n - robot_n))
+def render_brief(report, download_url=None):
+    """飞书简报正文（不含下载链接；下载走卡片按钮）。不统计大客户大区/未归属。"""
     by_new = {}
     for row in report.get("theaters") or []:
         name = _canon_theater(row.get("theater"))
+        if name in BRIEF_EXCLUDED_THEATERS:
+            continue
         by_new[name] = row
+    # 全国新建合计：只计简报战区（从明细群回算，避免战区表缺行）
+    new_n = robot_n = 0
+    for row in report.get("new_groups") or []:
+        name = _canon_theater(row.get("theater"))
+        if name in BRIEF_EXCLUDED_THEATERS:
+            continue
+        new_n += 1
+        robot_n += int(_robot(row))
+    no_robot_n = new_n - robot_n
+
     t = report["timeout"]
     by_timeout = {}
     if t is not None:
         for row in t.get("by_theater") or []:
             name = _canon_theater(row.get("theater"))
+            if name in BRIEF_EXCLUDED_THEATERS:
+                continue
             prev = by_timeout.get(name)
             if prev is None:
                 by_timeout[name] = {"theater": name, "events": int(row.get("events") or 0),
@@ -242,7 +259,8 @@ def render_brief(report, download_url):
             else:
                 prev["events"] += int(row.get("events") or 0)
                 prev["valid"] += int(row.get("valid") or 0)
-    theater_names = _theater_order(set(STANDARD_THEATERS) | set(by_new) | set(by_timeout))
+
+    theater_names = _theater_order(set(BRIEF_THEATERS) | set(by_new) | set(by_timeout), for_brief=True)
 
     lines = [
         f"拉群覆盖周报｜{report['week_start']} ~ {report['week_end']}（北京时间）",
@@ -257,21 +275,53 @@ def render_brief(report, download_url):
     if t is None:
         lines.append("本周≥30分钟超时：未提供数据。")
     else:
-        minutes = t.get("min_minutes", MIN_TIMEOUT_MINUTES)
-        lines.append(
-            f"本周≥30分钟超时触发 {t['events']} 条（规则剔除后有效 {t['valid']}）。"
-            f"过滤字段 timeout_rule.chat_time_out>={minutes}。各战区超时情况："
-        )
+        valid_total = sum(int((by_timeout.get(name) or {}).get("valid") or 0) for name in theater_names)
+        lines.append(f"本周≥30分钟超时有效触发 {valid_total} 条。")
+        valid_lines = []
         for name in theater_names:
-            row = by_timeout.get(name) or {}
-            events = int(row.get("events") or 0)
-            valid = int(row.get("valid") or 0)
-            lines.append(f"{name}：触发{events}（有效{valid}）。")
+            valid = int((by_timeout.get(name) or {}).get("valid") or 0)
+            if valid <= 0:
+                continue
+            valid_lines.append(f"{name}：有效{valid}。")
+        if valid_lines:
+            lines.append("各战区有效触发：")
+            lines.extend(valid_lines)
 
     if report["invalid_create_times"]:
         lines.append(f"创建时间缺失或无效 {report['invalid_create_times']} 群，未计入本周新建。")
-    lines.append(f"明细下载（需登录）：{download_url}")
+    # download_url 仅用于卡片按钮，不写入简报正文
     return "\n".join(lines)
+
+
+def build_weekly_card(brief, download_url, *, title=None):
+    """飞书 interactive 卡片：正文 +「下载明细」跳转按钮（需登录的 URL）。"""
+    if not download_url or not str(download_url).strip():
+        raise ValueError("缺少明细下载 URL")
+    title = title or "拉群覆盖周报"
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "blue",
+            "title": {"tag": "plain_text", "content": title},
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": brief},
+            },
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "下载明细"},
+                        "type": "primary",
+                        "url": str(download_url).strip(),
+                    }
+                ],
+            },
+        ],
+    }
 
 
 def write_weekly_excel(report, path):
@@ -419,11 +469,14 @@ def run_weekly_report(week_start=None, *, dry_run=None, force=False, state_path=
             directory = Path(out_dir) if out_dir is not None else REPORT_DIR
             filename = f"{week}_weekly.xlsx"
             excel = write_weekly_excel(report, directory / filename)
-            brief = render_brief(report, f"{cfg['link_base'].rstrip('/')}/weekly-reports/{filename}")
+            download_url = f"{cfg['link_base'].rstrip('/')}/weekly-reports/{filename}"
+            brief = render_brief(report, download_url)
             brief_path = directory / "brief.txt"
             atomic_write(brief_path, lambda tmp: tmp.write_text(brief + "\n", encoding="utf-8"))
             atomic_write(directory / f"{week}_brief.txt", lambda tmp: tmp.write_text(brief + "\n", encoding="utf-8"))
-            result.update(report=report, brief=brief, excel_path=str(excel), brief_path=str(brief_path))
+            card = build_weekly_card(brief, download_url, title=f"拉群覆盖周报｜{report['week_start']} ~ {report['week_end']}")
+            result.update(report=report, brief=brief, download_url=download_url, card=card,
+                          excel_path=str(excel), brief_path=str(brief_path))
         except Exception:
             if not protected:
                 record("failed")
@@ -434,7 +487,7 @@ def run_weekly_report(week_start=None, *, dry_run=None, force=False, state_path=
             return result
         record("sending")  # 必须先持久化；最终 sent 写失败时保留 sending。
         try:
-            message = send_chat_text(cfg["chat_id"], brief)
+            message = send_chat_card(cfg["chat_id"], card)
         except Exception:
             if protected:
                 state[week] = previous
