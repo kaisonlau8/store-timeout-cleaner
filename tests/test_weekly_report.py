@@ -57,26 +57,41 @@ def test_theaters_and_metrics():
 
 
 def test_timeout_and_excel(tmp_path):
-    events = [{"created_at": WEEK, "theater": "华东", "exclude_reason": value} for value in ("", None, "剔除")]
-    events.append({"created_at": "2026-10-26", "exclude_reason": ""})
+    # 10 分钟不计入主数字；仅 chat_time_out/minutes >= 30
+    events = [
+        {"created_at": WEEK, "theater": "华东", "exclude_reason": "", "chat_time_out": 30},
+        {"created_at": WEEK, "theater": "华东", "exclude_reason": None, "minutes": 30},
+        {"created_at": WEEK, "theater": "华东", "exclude_reason": "剔除", "chat_time_out": 30},
+        {"created_at": WEEK, "theater": "华东", "exclude_reason": "", "chat_time_out": 10},
+        {"created_at": WEEK, "theater": "华东", "exclude_reason": "", "rule_name": "10 分钟未回复预警"},
+        {"created_at": "2026-10-26", "exclude_reason": "", "chat_time_out": 30},
+    ]
     report = wr.build_weekly_report(WEEK, [group(WEEK, group_name="=1+1")], [], events)
     assert report["timeout"]["events"] == 3
     assert report["timeout"]["valid"] == 2
-    summary = {"events": 3, "valid": 2, "by_theater": [["华东", 3]], "valid_by_theater": [["华东", 2]]}
-    assert wr.build_weekly_report(WEEK, [], [], timeout_summary=summary)["timeout"] == report["timeout"]
+    assert report["timeout"]["min_minutes"] == 30
+    assert report["new_no_robot_groups"] == 0
+    summary = {"events": 3, "valid": 2, "min_minutes": 30, "by_theater": [["华东", 3]], "valid_by_theater": [["华东", 2]]}
+    built = wr.build_weekly_report(WEEK, [], [], timeout_summary=summary)["timeout"]
+    assert built["events"] == report["timeout"]["events"] and built["valid"] == report["timeout"]["valid"]
     summary["events"] = 4
     with pytest.raises(ValueError):
         wr.build_weekly_report(WEEK, [], [], timeout_summary=summary)
+    with pytest.raises(ValueError):
+        wr.build_weekly_report(WEEK, [], [], timeout_summary={**summary, "events": 3, "min_minutes": 10})
     path = wr.write_weekly_excel(report, tmp_path / "test.xlsx")
     book = load_workbook(path)
     try:
         assert book.sheetnames[:4] == ["本周新建群", "战区覆盖", "同步运行", "超时事件"]
         assert book["本周新建群"]["B2"].data_type == "s"
         assert book["本周新建群"]["B2"].value == "=1+1"
+        assert "≥30分钟触发" in [c.value for c in book["超时事件"][1]]
     finally:
         book.close()
     brief = wr.render_brief(report, "/weekly-reports/test.xlsx")
-    assert "含历史群" in brief and "有效 2" in brief
+    assert "本周新建客户群 1 个" in brief and "已拉机器人 1" in brief and "未拉 0" in brief
+    assert "≥30分钟超时触发 3 条" in brief and "有效 2" in brief
+    assert "chat_time_out>=30" in brief
     assert "未提供数据" in wr.render_brief(wr.build_weekly_report(WEEK, [], []), "url")
 
 
@@ -198,11 +213,16 @@ def test_db_readonly_and_snapshot_isolation(tmp_path, inputs):
     with sqlite3.connect(path) as conn:
         conn.execute("CREATE TABLE chat_store (create_time TEXT, in_robot INTEGER)")
         conn.execute("INSERT INTO chat_store VALUES (?, 1)", (WEEK,))
-        conn.execute("CREATE TABLE timeout_event (created_at TEXT, theater TEXT, exclude_reason TEXT)")
-        conn.execute("INSERT INTO timeout_event VALUES (?, '华东', '')", (WEEK,))
+        conn.execute("CREATE TABLE timeout_event (created_at TEXT, theater TEXT, exclude_reason TEXT, rule_id TEXT)")
+        conn.execute("CREATE TABLE timeout_rule (rule_id TEXT PRIMARY KEY, rule_name TEXT, chat_time_out INTEGER)")
+        conn.execute("INSERT INTO timeout_rule VALUES ('r30', '30 分钟未回复预警', 30)")
+        conn.execute("INSERT INTO timeout_rule VALUES ('r10', '10 分钟未回复预警', 10)")
+        conn.execute("INSERT INTO timeout_event VALUES (?, '华东', '', 'r30')", (WEEK,))
+        conn.execute("INSERT INTO timeout_event VALUES (?, '华东', '', 'r10')", (WEEK,))
     before = path.read_bytes()
     args = {**inputs, "chat_store_json": None, "db_path": path}
     result = wr.run_weekly_report(WEEK, dry_run=True, **args)
+    assert result["report"]["timeout"]["events"] == 1
     assert result["report"]["timeout"]["valid"] == 1
     assert path.read_bytes() == before
     result = wr.run_weekly_report(WEEK, dry_run=True, **inputs)

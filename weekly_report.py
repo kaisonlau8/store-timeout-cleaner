@@ -22,6 +22,7 @@ REPORT_DIR = ROOT / "data" / "weekly_reports"
 REPORT_FILENAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}_weekly\.xlsx")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 METRIC_KEYS = ("new_groups", "robot_rooms_added", "renamed_groups", "updated_groups", "in_robot_updated")
+MIN_TIMEOUT_MINUTES = 30  # 周报主数字只计 timeout_rule.chat_time_out >= 30
 
 
 def parse_time(value):
@@ -91,6 +92,24 @@ def _coverage(rows):
     }
 
 
+
+def _event_minutes(row):
+    """解析超时分钟：优先 chat_time_out / minutes；否则从规则名提取；无法确认视为 0。"""
+    for key in ("chat_time_out", "minutes"):
+        value = row.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    name = str(row.get("rule_name") or "")
+    match = re.search(r"(\d+)\s*分钟", name)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
 def build_weekly_report(week_start, chat_store, metrics, timeout_events=None, timeout_summary=None):
     """不读磁盘/网络、不修改输入。半开周区间；覆盖为当前输入快照，非历史重建。"""
     start, stop = week_bounds(week_start)
@@ -106,7 +125,8 @@ def build_weekly_report(week_start, chat_store, metrics, timeout_events=None, ti
         rows = [row for row in chat_store if (str(row.get("theater") or "").strip() or "未归属战区") == name]
         weekly = [row for row in rows if within(row.get("create_time"))]
         theaters.append({"theater": name, **_coverage(rows), "new_groups": len(weekly),
-                         "new_robot_groups": sum(_robot(row) for row in weekly)})
+                         "new_robot_groups": sum(_robot(row) for row in weekly),
+                         "new_no_robot_groups": sum(not _robot(row) for row in weekly)})
     runs = []
     for row in metrics:
         if row.get("tier") != "groups" or not within(row.get("start")):
@@ -122,12 +142,18 @@ def build_weekly_report(week_start, chat_store, metrics, timeout_events=None, ti
                  "closing_counts": dict(runs[-1]["counts"]) if runs else None})
     timeout = None
     if timeout_summary is not None:
+        # 调用方须已按 >=MIN_TIMEOUT_MINUTES 过滤；此处再校验声明的分钟阈值。
+        declared = timeout_summary.get("min_minutes", MIN_TIMEOUT_MINUTES)
+        if int(declared) < MIN_TIMEOUT_MINUTES:
+            raise ValueError(f"超时汇总 min_minutes 必须 >= {MIN_TIMEOUT_MINUTES}")
         event_counts = dict(timeout_summary["by_theater"])
-        valid_counts = dict(timeout_summary["valid_by_theater"])
+        valid_counts = dict(timeout_summary.get("valid_by_theater") or [])
         timeout = {"events": int(timeout_summary["events"]), "valid": int(timeout_summary["valid"]),
+                   "min_minutes": MIN_TIMEOUT_MINUTES, "filter": timeout_summary.get("filter")
+                   or f"timeout_rule.chat_time_out>={MIN_TIMEOUT_MINUTES}",
                    "by_theater": [{"theater": name, "events": int(event_counts.get(name, 0)),
                                    "valid": int(valid_counts.get(name, 0))}
-                                  for name in sorted(event_counts.keys() | valid_counts.keys())]}
+                                  for name in sorted(set(event_counts) | set(valid_counts))]}
         if (sum(row["events"] for row in timeout["by_theater"]) != timeout["events"]
                 or sum(row["valid"] for row in timeout["by_theater"]) != timeout["valid"]
                 or any(not 0 <= row["valid"] <= row["events"] for row in timeout["by_theater"])):
@@ -135,39 +161,56 @@ def build_weekly_report(week_start, chat_store, metrics, timeout_events=None, ti
     elif timeout_events is not None:
         counts = {}
         for row in timeout_events:
-            if within(row.get("created_at")):
-                name = str(row.get("theater") or "").strip() or "未归属战区"
-                item = counts.setdefault(name, {"theater": name, "events": 0, "valid": 0})
-                item["events"] += 1
-                item["valid"] += not bool(row.get("exclude_reason"))
+            if not within(row.get("created_at")):
+                continue
+            if _event_minutes(row) < MIN_TIMEOUT_MINUTES:
+                continue
+            name = str(row.get("theater") or "").strip() or "未归属战区"
+            item = counts.setdefault(name, {"theater": name, "events": 0, "valid": 0})
+            item["events"] += 1
+            item["valid"] += not bool(str(row.get("exclude_reason") or "").strip())
         timeout = {"events": sum(row["events"] for row in counts.values()),
                    "valid": sum(row["valid"] for row in counts.values()),
+                   "min_minutes": MIN_TIMEOUT_MINUTES,
+                   "filter": f"timeout_rule.chat_time_out>={MIN_TIMEOUT_MINUTES} (或事件 chat_time_out/minutes)",
                    "by_theater": [counts[name] for name in sorted(counts)]}
     return {
         "week_start": start.date().isoformat(), "week_end": (stop - timedelta(days=1)).date().isoformat(),
-        "coverage": _coverage(chat_store), "new_groups": new, "new_robot_groups": sum(_robot(row) for row in new),
+        "coverage": _coverage(chat_store), "new_groups": new,
+        "new_robot_groups": sum(_robot(row) for row in new),
+        "new_no_robot_groups": sum(not _robot(row) for row in new),
         "theaters": theaters, "sync": sync, "sync_runs": runs, "timeout": timeout,
         "invalid_create_times": sum(parse_time(row.get("create_time")) is None for row in chat_store),
     }
 
 
 def render_brief(report, download_url):
-    c, s = report["coverage"], report["sync"]
-    top = sorted((row for row in report["theaters"] if row["new_groups"]),
-                 key=lambda row: (-row["new_groups"], row["theater"]))[:3]
+    """飞书简报：短段落，聚焦本周新建拉群与 >=30 分钟超时。"""
+    new_n = len(report["new_groups"])
+    robot_n = int(report["new_robot_groups"])
+    no_robot_n = int(report.get("new_no_robot_groups", new_n - robot_n))
+    theater_bits = []
+    for row in sorted((item for item in report["theaters"] if item["new_groups"]),
+                      key=lambda item: (-item["new_groups"], item["theater"])):
+        n = int(row["new_groups"])
+        rob = int(row["new_robot_groups"])
+        theater_bits.append(f"{row['theater']}新建{n}（已拉{rob}/未拉{n - rob}）")
+    theater_txt = "；".join(theater_bits) if theater_bits else "无"
+    t = report["timeout"]
+    if t is None:
+        timeout_txt = "本周≥30分钟超时：未提供数据。"
+    else:
+        tops = sorted(t["by_theater"], key=lambda row: (-row["events"], row["theater"]))
+        th = "；".join(f"{row['theater']}{row['events']}" for row in tops[:8]) if tops else "无"
+        timeout_txt = (
+            f"本周≥30分钟超时触发 {t['events']} 条（规则剔除后有效 {t['valid']}）；"
+            f"过滤字段 timeout_rule.chat_time_out>={t.get('min_minutes', MIN_TIMEOUT_MINUTES)}；分战区：{th}。"
+        )
     lines = [
         f"拉群覆盖周报｜{report['week_start']} ~ {report['week_end']}（北京时间）",
-        f"期末（运行时快照）：客户群 {c['groups']}，已拉机器人 {c['robot_groups']}（{c['coverage_rate']:.1%}）；门店覆盖 {c['robot_stores']}/{c['stores']}",
-        f"本周新建群 {len(report['new_groups'])}（其中当前已拉机器人 {report['new_robot_groups']}）；同步累计 robot_rooms_added {s['robot_rooms_added']}；同步失败 {s['failures']} 次",
-        "口径：新建已拉机器人按创建时间及当前 in_robot；robot_rooms_added 是同步增量，含历史群，两者不同。",
-        "战区新建 Top：" + ("；".join(f"{row['theater']} {row['new_groups']}" for row in top) or "无"),
+        f"本周新建客户群 {new_n} 个，其中已拉机器人 {robot_n}、未拉 {no_robot_n}。分战区：{theater_txt}。",
+        timeout_txt,
     ]
-    if s["runs"]:
-        lines.append(f"groups 同步首末快照：{s['opening_counts'].get('groups', '缺失')} → {s['closing_counts'].get('groups', '缺失')}（周内首/末次记录）")
-    else:
-        lines.append("本周无 groups 同步记录（增量指标无数据，不代表实际为零）")
-    t = report["timeout"]
-    lines.append(f"本周超时事件 {t['events']}（有效 {t['valid']}）" if t is not None else "本周超时事件：未提供数据")
     if report["invalid_create_times"]:
         lines.append(f"创建时间缺失或无效 {report['invalid_create_times']} 群，未计入本周新建。")
     lines.append(f"明细下载（需登录）：{download_url}")
@@ -197,8 +240,8 @@ def write_weekly_excel(report, path):
         [row.get("room_id", ""), row.get("group_name", ""), row.get("store", ""), row.get("theater", ""),
          "是" if _robot(row) else "否", row.get("create_time", ""), row.get("owner_name", ""), row.get("member_count", "")]
         for row in report["new_groups"]])
-    coverage = sheet("战区覆盖", ["战区", "总群", "已拉机器人群", "覆盖率", "本周新建", "本周新建已拉机器人", "有群门店", "已拉机器人门店"], [
-        [row[key] for key in ("theater", "groups", "robot_groups", "coverage_rate", "new_groups", "new_robot_groups", "stores", "robot_stores")]
+    coverage = sheet("战区覆盖", ["战区", "总群", "已拉机器人群", "覆盖率", "本周新建", "本周新建已拉", "本周新建未拉", "有群门店", "已拉机器人门店"], [
+        [row[key] for key in ("theater", "groups", "robot_groups", "coverage_rate", "new_groups", "new_robot_groups", "new_no_robot_groups", "stores", "robot_stores")]
         for row in report["theaters"]])
     for row in coverage.iter_rows(min_row=2):
         row[3].number_format = "0.0%"
@@ -206,12 +249,13 @@ def write_weekly_excel(report, path):
         [row["start"], row["status"], *[row[key] for key in METRIC_KEYS], row["counts"].get("groups"), int(row["status"] != "success")]
         for row in report["sync_runs"]] + [
         ["汇总", "", *[report["sync"][key] for key in METRIC_KEYS], "", report["sync"]["failures"]]])
-    sheet("超时事件", ["战区", "本周事件", "有效超时"], [
+    sheet("超时事件", ["战区", "≥30分钟触发", "规则剔除后有效"], [
         [row["theater"], row["events"], row["valid"]] for row in (report["timeout"] or {}).get("by_theater", [])])
     sheet("口径说明", ["项目", "说明"], [
         ["周期（北京时间）", f"{report['week_start']} 00:00:00 ~ {report['week_end']} 23:59:59"],
         ["覆盖快照", "当前 chat_store，不是历史周日快照；门店按非空店名去重"],
-        ["机器人指标", "本周新建已拉机器人按 create_time + 当前 in_robot；robot_rooms_added 是同步增量，包含历史群"],
+        ["机器人指标", "本周新建已拉/未拉按 create_time + 当前 in_robot"],
+        ["超时主数字", f"仅 timeout_rule.chat_time_out>={MIN_TIMEOUT_MINUTES}（或事件 minutes/chat_time_out）；不含 10 分钟规则"],
         ["同步首记录 counts", json.dumps(report["sync"]["opening_counts"], ensure_ascii=False)],
         ["同步末记录 counts", json.dumps(report["sync"]["closing_counts"], ensure_ascii=False)],
         ["来源", json.dumps(report.get("sources", {}), ensure_ascii=False)],
@@ -238,7 +282,23 @@ def _load_inputs(db_path, chat_store_json, metrics_path, timeout_summary_json):
             if rows is None:
                 rows = [dict(row) for row in conn.execute("SELECT * FROM chat_store")]
             if not timeout_summary_json and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='timeout_event'").fetchone():
-                events = [dict(row) for row in conn.execute("SELECT created_at, theater, exclude_reason FROM timeout_event")]
+                has_rule = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='timeout_rule'"
+                ).fetchone()
+                if has_rule:
+                    events = [dict(row) for row in conn.execute(
+                        "SELECT e.created_at, e.theater, e.exclude_reason, e.rule_id, "
+                        "r.rule_name, r.chat_time_out FROM timeout_event e "
+                        "JOIN timeout_rule r ON r.rule_id = e.rule_id "
+                        "WHERE r.chat_time_out >= ?",
+                        (MIN_TIMEOUT_MINUTES,),
+                    )]
+                else:
+                    # 无规则表时要求事件自带分钟字段，由 build 阶段过滤。
+                    events = [dict(row) for row in conn.execute(
+                        "SELECT created_at, theater, exclude_reason, "
+                        "NULL AS rule_id, NULL AS rule_name, NULL AS chat_time_out FROM timeout_event"
+                    )]
     if isinstance(rows, dict):
         rows = rows.get("chat_store")
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):

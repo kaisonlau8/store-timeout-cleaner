@@ -4,6 +4,12 @@ import json
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+from scrm_sync import load_dotenv
+
+load_dotenv(str(Path(__file__).resolve().parent / ".env"))
+load_dotenv(str(Path(__file__).resolve().parent.parent / "NSS_Questionnaire_Reminder" / ".env"))
 
 BASE_URL = "https://open.feishu.cn/open-apis"
 
