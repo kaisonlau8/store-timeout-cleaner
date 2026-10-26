@@ -393,7 +393,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="拉群覆盖上一完整自然周周报，默认 dry-run")
     parser.add_argument("--week")
     modes = parser.add_mutually_exclusive_group()
-    modes.add_argument("--dry-run", dest="dry_run", action="store_const", const=True, default=None)
+    # 手动默认 dry-run，避免配置 dry_run=false 时误发；--send 显式发送；--scheduled 跟随配置。
+    modes.add_argument("--dry-run", dest="dry_run", action="store_const", const=True, default=True)
     modes.add_argument("--send", dest="dry_run", action="store_const", const=False)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--scheduled", action="store_true", help="仅 enabled=true 且到配置的星期/时间才运行，供每日 cron")
@@ -406,7 +407,8 @@ def main(argv=None):
         if args.scheduled and (not cfg["enabled"] or (now.weekday(), now.hour, now.minute) != (cfg["weekday"], cfg["hour"], cfg["minute"])):
             print("周报调度未启用或未到计划时间，跳过")
             return 0
-        result = run_weekly_report(args.week, dry_run=args.dry_run, force=args.force, config_path=args.config,
+        dry_run = None if args.scheduled else args.dry_run
+        result = run_weekly_report(args.week, dry_run=dry_run, force=args.force, config_path=args.config,
                                    state_path=args.state_path, chat_store_json=args.chat_store_json,
                                    metrics_jsonl=args.metrics_jsonl, timeout_summary_json=args.timeout_summary_json,
                                    db_path=args.db_path, out_dir=args.out)
