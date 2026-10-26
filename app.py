@@ -75,6 +75,8 @@ app.jinja_env.globals["theater_href"] = theater_href
 from mhero_auth.flask_adapter import init_app as _mhero_auth_init
 _mhero_auth_init(app, "cleaner", default_mode="off", public_get_paths=["/static/brand/*"], admin_paths=["/admin/*", "/api/admin/*"])
 install_date_ranges(app)
+from weekly_report_web import register_weekly_reports
+register_weekly_reports(app)
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 # 开发环境可用 CLEANER_DB_PATH / CLEANER_DATA_FILE 指向真实数据副本；默认不变
 DATA_FILE = os.environ.get("CLEANER_DATA_FILE") or os.path.join(ROOT, "data.json")
