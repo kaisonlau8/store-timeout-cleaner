@@ -115,6 +115,79 @@ venv/bin/python scripts/sync_timeout.py
 | `timeout.db` | 超时事件与导出登记 |
 | `input_file/` | 管家导出的 Excel |
 
+## 周报（默认关闭、dry-run）
+
+周报只读本地 `timeout.db` / JSON 快照和分层同步 JSONL，不调用 SCRM。
+`weekly_report.json` 默认 `enabled=false`、`dry_run=true`，不会启动后台线程或自动发送。
+手工 CLI 不受 enabled 限制；只有明确 `--send` 或将配置 dry_run 改为 false 才会发送。
+本次开发验证不发飞书、不部署；上线前需另行确认权限及配置。
+
+```bash
+python scripts/run_weekly_report.py --week 2026-10-19 --dry-run \
+  --chat-store-json /path/to/chat_store_snap.json \
+  --metrics-jsonl /path/to/scrm-tier-metrics.jsonl \
+  --timeout-summary-json /path/to/week_timeout_summary.json \
+  --out /path/to/output
+# 默认读取 CLEANER_DB_PATH（未配置为 timeout.db），只读打开；上一完整周
+python scripts/run_weekly_report.py --dry-run
+```
+
+产物：`YYYY-MM-DD_weekly.xlsx`、`brief.txt`、`YYYY-MM-DD_brief.txt`。
+默认输出 `data/weekly_reports/`（已忽略，不提交群名/群主等信息）。
+显式 `--chat-store-json` 时不会偷偷回读默认 DB；如需同读超时数据，显式传 `--db-path`。
+`--timeout-summary-json` 接受 `events`、`valid`、`by_theater`、`valid_by_theater`，后两者为战区/数字对的列表或映射；总数须与分战区合计一致。
+该汇总无日期元数据时由操作者确保与 `--week` 一致；缺少超时数据会在简报注明。
+
+口径：北京时间周一 00:00 至下周一 00:00（不含）；本周新建以 `create_time` 判定，
+无时区按北京时间、带时区先转北京时间，缺失/非法时间不纳入新建并注明。
+期末覆盖是运行时 chat_store 快照，**不是历史周日重建**；门店按非空店名去重。
+“新建且已拉机器人”取当前 `in_robot=1`；`robot_rooms_added` 为 groups 同步增量（包含历史群），不可混用。
+metrics 仅选 start 在周内的 groups 记录，非 success 均计失败；updated_groups/groups_updated 只取一个，不重复加。
+首末快照严格取周内首末记录 counts，字段缺失不推算。超时按事件逐条计数，exclude_reason 为空视为有效，不额外按消息去重或套评分过滤。
+JSONL 损坏/缺失则拒绝生成，不把缺失数据当作零。
+
+配置支持 `--config /path/to/local.json` 覆盖默认 JSON。常用字段：
+
+- `weekday/hour/minute`：默认周一 09:40；拒绝 00:00、08:30、09:00、09:30、12:00 前后 5 分钟（含跨午夜）。
+- `metrics_path`：优先读 `STC_METRICS_PATH`，其次配置，再回落 `~/m-hero-run/cron-logs/scrm-tier-metrics.jsonl`。
+- `link_base`：优先读 `STC_LINK_BASE`；公网地址仅在环境/未入库配置中设置，默认生成相对下载链接。
+- `chat_id`：默认建议“售后服务运营”；只影响显式发送。
+- `state_path`：默认 `data/weekly_reports/state.json`，相对路径以仓库根目录为基准；`--state-path` 可覆盖。
+- `sending_timeout_seconds`：默认 21600（6 小时）。
+
+`/weekly-reports` 列表及 `/weekly-reports/<file>` 下载走现有 m-hero SSO，未将它们加入公开路径；
+即使 auth 为 off/audit，没有 `g.mhero_session` 也返回 401。上线需启用 `MHERO_AUTH_CLEANER=on`，
+沿用现有 SSO 配置，不能用静态目录公开文件。仅允许规范日期 XLSX 文件名，禁止路径穿越和符号链接下载。
+
+去重在跨进程非阻塞 fcntl 锁内完成，生成文件期间也持锁。
+sent 阻止重复发送；sending 在 6 小时内阻止重发，无效/未来时间戳保守阻止；
+dry_run/failed 不阻止真实发送。预览不覆盖 sent/sending。
+`--send` 与 `--dry-run` 互斥；`--force` 可跳过去重，但不能跳过锁或损坏状态校验。
+状态用 fsync + 同目录原子替换；先落 sending 再发消息，发送成功后落 sent 失败会保留 sending。
+强制重发失败不抹掉旧 sent/sending。调用超时存在“远端已收到但本地未知”的风险，重试前人工核实。
+
+飞书凭证仅来自环境 `FEISHU_APP_ID/FEISHU_APP_SECRET`（兼容 `APP_ID/APP_SECRET`），不回读其他仓库凭证，
+不在状态或日志中记录 token/secret。需由运行器注入环境变量。
+
+### 上线 cron 示例（仅说明，不修改生产）
+
+本仓库不增加应用内调度。审核上线时，在外部 `~/m-hero-run/launchers/cron.py` 按其现有命令格式增加：
+
+```python
+"cleaner-weekly-report": (["09:40"], [PYTHON, str(CLEANER_ROOT / "scripts/run_weekly_report.py"), "--scheduled"]),
+```
+
+此为条目示意，PYTHON/CLEANER_ROOT 需对照运行器实际定义。每天 09:40 调用，
+`--scheduled` 在北京时间校验 enabled/weekday/hour/minute，不到点直接跳过。
+先保持 dry_run=true，确认本地输出、SSO 下载及数据口径；再经批准配置 enabled=true、dry_run=false，
+核实群 ID、凭证、metrics 路径和下载基址。不要与其他发送任务共用独立状态路径以绕过去重。
+
+测试（出站网络被阻断，发送用 mock，后台评分线程在每个测试结束前收尾）：
+
+```bash
+/tmp/opencode/stc-weekly-venv/bin/python -m pytest -q
+```
+
 ## 部署
 
 launchd：`com.store-timeout-cleaner.web`（控制台）、`com.store-timeout-cleaner.sync`（每天 00:00 / 12:00 同步拉群覆盖）  

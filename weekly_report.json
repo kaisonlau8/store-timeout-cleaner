@@ -1,0 +1,12 @@
+{
+  "enabled": false,
+  "dry_run": true,
+  "weekday": 0,
+  "hour": 9,
+  "minute": 40,
+  "chat_id": "oc_ba8af247db2e2dc4955b1d01652add82",
+  "link_base": "",
+  "metrics_path": "",
+  "state_path": "data/weekly_reports/state.json",
+  "sending_timeout_seconds": 21600
+}

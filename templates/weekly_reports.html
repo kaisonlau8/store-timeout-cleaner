@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>拉群覆盖周报</title></head>
+<body>
+  <h1>拉群覆盖周报</h1>
+  <p><a href="/">返回控制台</a> · 明细含群主等信息，仅供已登录人员使用。</p>
+  <ul>
+  {% for file in files %}
+    <li><a href="{{ url_for('weekly_report_download', filename=file) }}">{{ file }}</a></li>
+  {% else %}
+    <li>暂无周报</li>
+  {% endfor %}
+  </ul>
+</body>
+</html>
