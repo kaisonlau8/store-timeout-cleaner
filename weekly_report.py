@@ -23,6 +23,23 @@ REPORT_FILENAME_RE = re.compile(r"\d{4}-\d{2}-\d{2}_weekly\.xlsx")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 METRIC_KEYS = ("new_groups", "robot_rooms_added", "renamed_groups", "updated_groups", "in_robot_updated")
 MIN_TIMEOUT_MINUTES = 30  # 周报主数字只计 timeout_rule.chat_time_out >= 30
+# 简报必须逐条列出的标准战区（含 0）；数据中多出的战区会追加在后。
+STANDARD_THEATERS = (
+    "武汉特区",
+    "华南战区",
+    "西南战区",
+    "华东战区",
+    "西北战区",
+    "华中战区",
+    "华北战区",
+    "东北战区",
+    "大客户大区",
+    "未归属战区",
+)
+THEATER_ALIASES = {
+    "未知": "未归属战区",
+    "未知战区": "未归属战区",
+}
 
 
 def parse_time(value):
@@ -184,33 +201,73 @@ def build_weekly_report(week_start, chat_store, metrics, timeout_events=None, ti
     }
 
 
+def _canon_theater(name):
+    name = str(name or "").strip() or "未归属战区"
+    return THEATER_ALIASES.get(name, name)
+
+
+def _theater_order(names):
+    """标准战区固定顺序在前，其余按名称排在后。"""
+    seen = set()
+    ordered = []
+    for name in STANDARD_THEATERS:
+        if name in names and name not in seen:
+            ordered.append(name)
+            seen.add(name)
+    for name in sorted(names):
+        if name not in seen:
+            ordered.append(name)
+            seen.add(name)
+    return ordered
+
+
 def render_brief(report, download_url):
-    """飞书简报：短段落，聚焦本周新建拉群与 >=30 分钟超时。"""
+    """飞书简报：全国合计后，每个战区单独一行（含 0），覆盖标准战区清单。"""
     new_n = len(report["new_groups"])
     robot_n = int(report["new_robot_groups"])
     no_robot_n = int(report.get("new_no_robot_groups", new_n - robot_n))
-    theater_bits = []
-    for row in sorted((item for item in report["theaters"] if item["new_groups"]),
-                      key=lambda item: (-item["new_groups"], item["theater"])):
-        n = int(row["new_groups"])
-        rob = int(row["new_robot_groups"])
-        theater_bits.append(f"{row['theater']}新建{n}（已拉{rob}/未拉{n - rob}）")
-    theater_txt = "；".join(theater_bits) if theater_bits else "无"
+    by_new = {}
+    for row in report.get("theaters") or []:
+        name = _canon_theater(row.get("theater"))
+        by_new[name] = row
     t = report["timeout"]
-    if t is None:
-        timeout_txt = "本周≥30分钟超时：未提供数据。"
-    else:
-        tops = sorted(t["by_theater"], key=lambda row: (-row["events"], row["theater"]))
-        th = "；".join(f"{row['theater']}{row['events']}" for row in tops[:8]) if tops else "无"
-        timeout_txt = (
-            f"本周≥30分钟超时触发 {t['events']} 条（规则剔除后有效 {t['valid']}）；"
-            f"过滤字段 timeout_rule.chat_time_out>={t.get('min_minutes', MIN_TIMEOUT_MINUTES)}；分战区：{th}。"
-        )
+    by_timeout = {}
+    if t is not None:
+        for row in t.get("by_theater") or []:
+            name = _canon_theater(row.get("theater"))
+            prev = by_timeout.get(name)
+            if prev is None:
+                by_timeout[name] = {"theater": name, "events": int(row.get("events") or 0),
+                                    "valid": int(row.get("valid") or 0)}
+            else:
+                prev["events"] += int(row.get("events") or 0)
+                prev["valid"] += int(row.get("valid") or 0)
+    theater_names = _theater_order(set(STANDARD_THEATERS) | set(by_new) | set(by_timeout))
+
     lines = [
         f"拉群覆盖周报｜{report['week_start']} ~ {report['week_end']}（北京时间）",
-        f"本周新建客户群 {new_n} 个，其中已拉机器人 {robot_n}、未拉 {no_robot_n}。分战区：{theater_txt}。",
-        timeout_txt,
+        f"本周新建客户群 {new_n} 个，其中已拉机器人 {robot_n}、未拉 {no_robot_n}。各战区新建情况：",
     ]
+    for name in theater_names:
+        row = by_new.get(name) or {}
+        n = int(row.get("new_groups") or 0)
+        rob = int(row.get("new_robot_groups") or 0)
+        lines.append(f"{name}：新建{n}（已拉{rob}/未拉{n - rob}）。")
+
+    if t is None:
+        lines.append("本周≥30分钟超时：未提供数据。")
+    else:
+        minutes = t.get("min_minutes", MIN_TIMEOUT_MINUTES)
+        lines.append(
+            f"本周≥30分钟超时触发 {t['events']} 条（规则剔除后有效 {t['valid']}）。"
+            f"过滤字段 timeout_rule.chat_time_out>={minutes}。各战区超时情况："
+        )
+        for name in theater_names:
+            row = by_timeout.get(name) or {}
+            events = int(row.get("events") or 0)
+            valid = int(row.get("valid") or 0)
+            lines.append(f"{name}：触发{events}（有效{valid}）。")
+
     if report["invalid_create_times"]:
         lines.append(f"创建时间缺失或无效 {report['invalid_create_times']} 群，未计入本周新建。")
     lines.append(f"明细下载（需登录）：{download_url}")

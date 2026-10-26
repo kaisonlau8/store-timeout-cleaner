@@ -92,6 +92,15 @@ def test_timeout_and_excel(tmp_path):
     assert "本周新建客户群 1 个" in brief and "已拉机器人 1" in brief and "未拉 0" in brief
     assert "≥30分钟超时触发 3 条" in brief and "有效 2" in brief
     assert "chat_time_out>=30" in brief
+    # 每个标准战区单独一行（含 0），不得挤成一行分号列表
+    for name in wr.STANDARD_THEATERS:
+        assert f"{name}：新建" in brief
+        assert f"{name}：触发" in brief
+    assert "华东：新建1（已拉1/未拉0）。" in brief
+    assert "华东：触发3（有效2）。" in brief
+    assert "武汉特区：新建0（已拉0/未拉0）。" in brief
+    assert "分战区：" not in brief
+    assert brief.count("\n") >= 20
     assert "未提供数据" in wr.render_brief(wr.build_weekly_report(WEEK, [], []), "url")
 
 
