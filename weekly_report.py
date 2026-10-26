@@ -276,12 +276,16 @@ def render_brief(report, download_url=None):
         lines.append("本周≥30分钟超时：未提供数据。")
     else:
         valid_total = sum(int((by_timeout.get(name) or {}).get("valid") or 0) for name in theater_names)
-        lines.append(f"本周≥30分钟超时有效触发 {valid_total} 条。各战区有效触发：")
+        lines.append(f"本周≥30分钟超时有效触发 {valid_total} 条。")
+        valid_lines = []
         for name in theater_names:
             valid = int((by_timeout.get(name) or {}).get("valid") or 0)
             if valid <= 0:
                 continue
-            lines.append(f"{name}：有效{valid}。")
+            valid_lines.append(f"{name}：有效{valid}。")
+        if valid_lines:
+            lines.append("各战区有效触发：")
+            lines.extend(valid_lines)
 
     if report["invalid_create_times"]:
         lines.append(f"创建时间缺失或无效 {report['invalid_create_times']} 群，未计入本周新建。")
