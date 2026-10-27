@@ -62,6 +62,7 @@
                     </select>
                 </div>
                 <button class="filter-btn" id="groups-list-query" type="button"><svg class="ai" aria-hidden="true"><use href="#i-search"/></svg>查询</button>
+                <a class="export-link groups-export" id="groups-list-export" href="/api/groups/list/export" title="按当前筛选导出全部匹配群，不受分页限制"><svg class="ai" aria-hidden="true"><use href="#i-file-excel"/></svg>导出 Excel</a>
             </div>
 
             <p class="error-msg" id="groups-list-error" hidden></p>
@@ -171,7 +172,7 @@
     <script src="{{ url_for('static', filename='js/antd-feedback.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='js/stc-detail.js') }}?v=6"></script>
     <script src="{{ url_for('static', filename='js/groups.js') }}?v=8"></script>
-    <script src="{{ url_for('static', filename='js/groups-list.js') }}?v=5"></script>
+    <script src="{{ url_for('static', filename='js/groups-list.js') }}?v=6"></script>
     <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

@@ -1,19 +1,25 @@
-"""B3 群目录与数据补齐：迁移、同步写入、群详情与 /api/groups/list。"""
+"""B3 群目录与数据补齐：迁移、同步写入、群详情、群列表与筛选导出。"""
 
 from __future__ import annotations
 
 import importlib
+import io
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo
 
 import pytest
+from openpyxl import load_workbook
 
 import timeout_algo
+from group_keyword import open_ro, query_group_list
 from group_query import local_context
 from scrm_sync import sync_from_scrm
 from tests.test_coverage_store import _minimal_stats
@@ -88,6 +94,7 @@ GROUPS = [
     },
 ]
 ROBOT_IDS = ["r1", "r3", "r6"]
+EXPORT_HEADERS = ("群名称", "群 ID", "店名", "战区", "是否拉了机器人", "群主", "群人数", "创建时间")
 
 
 def _write_data(root: Path) -> Path:
@@ -460,6 +467,132 @@ def test_groups_list_pagination_size_cap_and_invalid_params(directory_client):
         assert response.status_code == 400, query
 
 
+def _read_export(response):
+    assert response.status_code == 200
+    assert response.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    disposition = unquote(response.headers["Content-Disposition"])
+    assert re.fullmatch(r"attachment; filename\*=UTF-8''群列表_\d{8}\.xlsx", disposition)
+    wb = load_workbook(io.BytesIO(response.data), read_only=True)
+    try:
+        assert wb.sheetnames == ["群列表"]
+        rows = list(wb.active.iter_rows(values_only=True))
+        assert rows[0] == EXPORT_HEADERS
+        return [dict(zip(EXPORT_HEADERS, row)) for row in rows[1:]]
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize(
+    "filters,ids",
+    [
+        ({}, ["r6", "r3", "r2", "r1", "r4", "r5"]),
+        ({"theater": "华东战区"}, ["r6", "r3"]),
+        ({"theater": "武汉特区"}, ["r2", "r1"]),
+        ({"robot": "0"}, ["r2", "r4", "r5"]),
+        ({"robot": "1"}, ["r6", "r3", "r1"]),
+        ({"store": "上海"}, ["r6", "r3"]),
+        ({"q": "x700"}, ["r6", "r3", "r2", "r1"]),
+        ({"q": "R2"}, ["r2"]),
+        ({"q": "不存在的群"}, []),
+        ({"theater": "华东战区", "robot": "0"}, []),
+        ({"theater": " 华东战区 ", "robot": " 1 ", "store": " 上海 ", "q": " x700 "}, ["r6", "r3"]),
+    ],
+)
+def test_groups_list_export_matches_query_filters_total_and_content(directory_client, filters, ids):
+    client, _, root = directory_client
+    conn = open_ro(str(root / "timeout.db"))
+    try:
+        listed = query_group_list(conn, **filters)
+    finally:
+        conn.close()
+
+    exported = _read_export(client.get(
+        "/api/groups/list/export", query_string={**filters, "page": "3", "size": "1"}
+    ))
+    assert len(exported) == listed["total"] == len(ids)
+    assert [row["群 ID"] for row in exported] == ids
+    for actual, source in zip(exported, listed["rows"]):
+        assert actual == {
+            "群名称": source["group_name"] or None,
+            "群 ID": source["room_id"],
+            "店名": source["store"] or None,
+            "战区": source["theater"] or None,
+            "是否拉了机器人": "是" if source["in_robot"] else "否",
+            "群主": source["owner_name"],
+            "群人数": source["member_count"],
+            "创建时间": source["create_time"] or None,
+        }
+
+
+def test_groups_list_export_exceeds_page_cap_ignores_pagination_and_sorts_ties(directory_client):
+    client, _, root = directory_client
+    ids = [f"bulk-{idx:03d}" for idx in range(125)]
+    conn = connect(str(root / "timeout.db"))
+    try:
+        conn.executemany(
+            "INSERT INTO chat_store(room_id, group_name, in_robot, create_time) VALUES (?, ?, 0, ?)",
+            [(room_id, "批量测试群", "2026-09-01T00:00:00+08:00") for room_id in reversed(ids)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    listed = client.get("/api/groups/list?q=bulk-&page=2&size=50").get_json()
+    assert listed["total"] == 125
+    assert len(listed["rows"]) == 50
+    assert [row["room_id"] for row in listed["rows"]] == ids[50:100]
+
+    exported = _read_export(client.get("/api/groups/list/export?q=bulk-&page=abc&size=0"))
+    assert len(exported) == listed["total"]
+    assert [row["群 ID"] for row in exported] == ids
+
+
+@pytest.mark.parametrize("missing_db", [True, False])
+def test_groups_list_export_empty_or_missing_database_returns_headers(tmp_path, monkeypatch, missing_db):
+    db = tmp_path / "timeout.db"
+    if not missing_db:
+        connect(str(db)).close()
+    module = _load_app(monkeypatch, db, _write_data(tmp_path))
+    client = module.app.test_client()
+    assert _read_export(client.get("/api/groups/list/export?robot=0")) == []
+    assert client.get("/api/groups/list?robot=0").get_json()["total"] == 0
+    assert db.exists() is not missing_db
+
+
+@pytest.mark.parametrize("missing_db", [True, False])
+@pytest.mark.parametrize("robot", ["2", "true", "-1", " "])
+def test_groups_list_export_invalid_robot_matches_list_400(directory_client, monkeypatch, missing_db, robot):
+    client, _, root = directory_client
+    if missing_db:
+        monkeypatch.setenv("CLEANER_DB_PATH", str(root / "missing.db"))
+    listed = client.get("/api/groups/list", query_string={"robot": robot})
+    exported = client.get("/api/groups/list/export", query_string={"robot": robot})
+    assert exported.status_code == listed.status_code == 400
+    assert exported.data == listed.data
+    assert "robot 只能是 all、1 或 0" in exported.get_data(as_text=True)
+
+
+def test_groups_list_export_preserves_formula_like_text_and_numeric_zero(directory_client):
+    client, _, root = directory_client
+    conn = connect(str(root / "timeout.db"))
+    try:
+        conn.execute("UPDATE chat_store SET group_name = '=1+1', owner_name = '=2+2' WHERE room_id = 'r6'")
+        conn.commit()
+    finally:
+        conn.close()
+    response = client.get("/api/groups/list/export?q=r6")
+    exported = _read_export(response)
+    assert exported[0]["群名称"] == "=1+1"
+    assert exported[0]["群主"] == "=2+2"
+    assert exported[0]["群人数"] == 0
+    wb = load_workbook(io.BytesIO(response.data))
+    try:
+        assert wb.active["A2"].data_type == "s"
+        assert wb.active["F2"].data_type == "s"
+    finally:
+        wb.close()
+
+
 def test_groups_page_has_tabs_list_table_and_management_title(directory_client):
     client, _, _ = directory_client
     html = client.get("/groups").get_data(as_text=True)
@@ -471,6 +604,8 @@ def test_groups_page_has_tabs_list_table_and_management_title(directory_client):
     assert 'class="tab-content" id="tab-keyword"' in html
     assert 'id="keyword-input"' in html and 'id="store-q"' in html
     assert 'id="groups-list-table"' in html and "data-ds-primary" in html
+    assert 'class="export-link groups-export" id="groups-list-export" href="/api/groups/list/export"' in html
+    assert html.index('id="groups-list-query"') < html.index('id="groups-list-export"') < html.index('id="groups-list-table"')
     for header in ("群名", "门店", "战区", "机器人", "群主", "群人数", "创建时间"):
         assert "<th" in html and header in html
     assert "js/groups-list.js" in html
@@ -495,11 +630,23 @@ def test_groups_list_js_uses_spin_replace_state_and_links(directory_client):
     assert "上一页" in (ROOT / "templates" / "groups.html").read_text(encoding="utf-8")
 
 
+def test_groups_list_export_js_uses_current_filters_without_pagination():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    result = subprocess.run(
+        [node, str(ROOT / "tests" / "groups_list_export_js.cjs")],
+        cwd=ROOT, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
 def test_groups_list_responsive_fixes_are_scoped_and_versioned(directory_client):
     client, _, _ = directory_client
     html = client.get("/groups").get_data(as_text=True)
     assert "css/groups-list.css?v=2" in html
-    assert "js/groups-list.js?v=5" in html
+    assert "js/groups-list.js?v=6" in html
     assert "js/groups.js?v=8" in html
 
     css = (ROOT / "static" / "css" / "groups-list.css").read_text(encoding="utf-8")

@@ -144,6 +144,7 @@
         var storeInput = document.getElementById('list-store-q');
         var robotSelect = document.getElementById('list-robot-select');
         var queryButton = document.getElementById('groups-list-query');
+        var exportLink = document.getElementById('groups-list-export');
         var errorBox = document.getElementById('groups-list-error');
         var tableWrap = document.getElementById('groups-list-table-wrap');
         var emptyBox = document.getElementById('groups-list-empty');
@@ -166,23 +167,43 @@
             all.value = '';
             all.textContent = '全部战区';
             theaterSelect.appendChild(all);
-            (theaters || []).forEach(function (name) {
+            var names = (theaters || []).slice();
+            // 保留 URL 中的筛选，即使当前数据已不包含该战区。
+            if (state.theater && names.indexOf(state.theater) < 0) names.push(state.theater);
+            names.forEach(function (name) {
                 var option = document.createElement('option');
                 option.value = name;
                 option.textContent = name;
                 theaterSelect.appendChild(option);
             });
-            theaterSelect.value = (theaters || []).indexOf(state.theater) >= 0 ? state.theater : '';
-            state.theater = theaterSelect.value;
+            theaterSelect.value = state.theater;
             theatersFilled = true;
         }
 
-        function resultParams() {
+        function filtersFromInputs() {
+            return {
+                q: (qInput.value || '').trim(),
+                theater: theatersFilled ? (theaterSelect.value || '') : state.theater,
+                store: (storeInput.value || '').trim(),
+                robot: robotSelect.value || 'all'
+            };
+        }
+
+        function filterParams(filters) {
             var params = new URLSearchParams();
-            params.set('q', state.q);
-            params.set('theater', state.theater);
-            params.set('store', state.store);
-            params.set('robot', state.robot);
+            params.set('q', filters.q);
+            params.set('theater', filters.theater);
+            params.set('store', filters.store);
+            params.set('robot', filters.robot);
+            return params;
+        }
+
+        function updateExportHref() {
+            if (exportLink) exportLink.href = '/api/groups/list/export?' + filterParams(filtersFromInputs()).toString();
+        }
+
+        function resultParams() {
+            var params = filterParams(state);
             params.set('page', String(state.page));
             params.set('size', String(PAGE_SIZE));
             return params.toString();
@@ -204,6 +225,7 @@
 
         async function query(page) {
             if (page != null) state.page = page;
+            updateExportHref();
             if (pageInfo) pageInfo.textContent = '加载中…';
             if (errorBox) errorBox.hidden = true;
             queryButton.disabled = true;
@@ -214,6 +236,7 @@
                 if (!response.ok) throw new Error(data.error || data.description || '群列表加载失败');
                 state.page = data.page || state.page;
                 if (!theatersFilled) fillTheaters(data.theaters || []);
+                updateExportHref();
                 render(data);
                 loaded = true;
                 writeListState(state);
@@ -232,15 +255,21 @@
         }
 
         function queryFromInputs() {
-            state.q = (qInput.value || '').trim();
-            state.theater = theaterSelect.value || '';
-            state.store = (storeInput.value || '').trim();
-            state.robot = robotSelect.value || 'all';
+            var filters = filtersFromInputs();
+            state.q = filters.q;
+            state.theater = filters.theater;
+            state.store = filters.store;
+            state.robot = filters.robot;
             state.page = 1;
             query(1);
         }
 
         queryButton.addEventListener('click', queryFromInputs);
+        [qInput, theaterSelect, storeInput, robotSelect].forEach(function (input) {
+            input.addEventListener('input', updateExportHref);
+            input.addEventListener('change', updateExportHref);
+        });
+        if (exportLink) exportLink.addEventListener('click', updateExportHref);
         [qInput, storeInput].forEach(function (input) {
             input.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter') {
