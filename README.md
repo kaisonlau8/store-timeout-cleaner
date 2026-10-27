@@ -89,9 +89,11 @@ venv/bin/python scripts/sync_timeout.py
 
 导出文件含客户消息，**不要提交** `input_file/`。
 
-### 群名关键字统计
+### 群管理
 
-`/groups`：按客户群名称做关键字子串统计（默认关键字 `X700-VIP`，大小写不敏感）。
+`/groups` 的「群列表」Tab 在查询按钮旁提供「导出 Excel」，按当前群名 / 群 ID、战区、门店和机器人状态筛选导出全部匹配行（`GET /api/groups/list/export?q=&theater=&store=&robot=all`），不受分页限制。
+
+「关键字统计」Tab 按客户群名称做关键字子串统计（默认关键字 `X700-VIP`，大小写不敏感）。
 
 1. 数据来自 `timeout.db` 的 `chat_store` 表（SCRM 每次同步写入的全量客户群），只读查询，不新增外部数据源
 2. 支持战区筛选（作用于所有统计）与「仅已拉机器人群」过滤；关键字写入 URL query，便于分享

@@ -161,20 +161,22 @@ def query_group_list(
     page: int | str | None = 1,
     size: int | str | None = 50,
 ) -> dict[str, Any]:
-    """群目录：按群名/群 ID、战区、门店、机器人状态筛选并分页。"""
+    """群目录：按群名/群 ID、战区、门店、机器人状态筛选；size=None 时不分页。"""
     try:
         page_no = int(page if page not in (None, "") else 1)
     except (TypeError, ValueError):
         raise GroupListError("page 必须是正整数") from None
-    try:
-        page_size = int(size if size not in (None, "") else 50)
-    except (TypeError, ValueError):
-        raise GroupListError("size 必须是正整数") from None
     if page_no < 1:
         raise GroupListError("page 必须是正整数")
-    if page_size < 1:
-        raise GroupListError("size 必须是正整数")
-    page_size = min(page_size, 100)
+    page_size = None
+    if size is not None:
+        try:
+            page_size = int(size if size != "" else 50)
+        except (TypeError, ValueError):
+            raise GroupListError("size 必须是正整数") from None
+        if page_size < 1:
+            raise GroupListError("size 必须是正整数")
+        page_size = min(page_size, 100)
 
     keyword = str(q or "").strip()
     theater = str(theater or "").strip()
@@ -210,7 +212,11 @@ def query_group_list(
     total = int(
         conn.execute(f"SELECT COUNT(*) AS n FROM chat_store{where_sql}", params).fetchone()["n"] or 0
     )
-    offset = (page_no - 1) * page_size
+    pagination_sql = ""
+    row_params = list(params)
+    if page_size is not None:
+        pagination_sql = " LIMIT ? OFFSET ?"
+        row_params.extend([page_size, (page_no - 1) * page_size])
     rows = [
         {
             "room_id": row["room_id"] or "",
@@ -226,9 +232,8 @@ def query_group_list(
             f"SELECT room_id, group_name, store, theater, in_robot, "
             f"{owner_name_col}, {member_count_col}, {create_time_col} "
             f"FROM chat_store{where_sql} "
-            "ORDER BY create_time DESC, room_id "
-            "LIMIT ? OFFSET ?",
-            [*params, page_size, offset],
+            f"ORDER BY create_time DESC, room_id{pagination_sql}",
+            row_params,
         )
     ]
     return {

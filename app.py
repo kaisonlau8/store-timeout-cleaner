@@ -974,25 +974,26 @@ def groups_page():
     return render_template("groups.html")
 
 
-@app.route("/api/groups/list")
-def api_groups_list():
-    page_raw = request.args.get("page", "1")
-    size_raw = request.args.get("size", "50")
-    try:
-        page = int(page_raw if page_raw not in ("", None) else 1)
-        size = int(size_raw if size_raw not in ("", None) else 50)
-    except (TypeError, ValueError):
-        abort(400, description="page/size 必须是正整数")
-    if page < 1 or size < 1:
-        abort(400, description="page/size 必须是正整数")
-    size = min(size, 100)
+def _group_list_payload(*, paginate=True):
+    page, size = 1, None
+    if paginate:
+        page_raw = request.args.get("page", "1")
+        size_raw = request.args.get("size", "50")
+        try:
+            page = int(page_raw if page_raw not in ("", None) else 1)
+            size = int(size_raw if size_raw not in ("", None) else 50)
+        except (TypeError, ValueError):
+            abort(400, description="page/size 必须是正整数")
+        if page < 1 or size < 1:
+            abort(400, description="page/size 必须是正整数")
+        size = min(size, 100)
     robot = (request.args.get("robot") or "all").strip().lower()
     if robot not in ("all", "1", "0"):
         abort(400, description="robot 只能是 all、1 或 0")
 
     db_path = _db_path()
     if not os.path.isfile(db_path):
-        return jsonify({"total": 0, "page": page, "size": size, "rows": [], "theaters": []})
+        return {"total": 0, "page": page, "size": size, "rows": [], "theaters": []}
     conn = open_ro(db_path)
     try:
         payload = query_group_list(
@@ -1008,7 +1009,52 @@ def api_groups_list():
         abort(400, description=str(exc))
     finally:
         conn.close()
-    return jsonify(payload)
+    return payload
+
+
+@app.route("/api/groups/list")
+def api_groups_list():
+    return jsonify(_group_list_payload())
+
+
+@app.route("/api/groups/list/export")
+def api_groups_list_export():
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.utils import get_column_letter
+
+    payload = _group_list_payload(paginate=False)
+    # 全量行只查询一次；写入式工作簿避免再将所有 Excel 单元格保存在内存中。
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("群列表")
+    ws.freeze_panes = "A2"
+    for idx, width in enumerate([60, 38, 34, 18, 20, 18, 10, 30], 1):
+        ws.column_dimensions[get_column_letter(idx)].width = width
+    ws.append(["群名称", "群 ID", "店名", "战区", "是否拉了机器人", "群主", "群人数", "创建时间"])
+    for row in payload["rows"]:
+        values = [
+            row["group_name"], row["room_id"], row["store"], row["theater"],
+            "是" if row["in_robot"] else "否",
+            row["owner_name"], row["member_count"], row["create_time"],
+        ]
+        cells = []
+        for value in values:
+            cell = WriteOnlyCell(ws, value=value)
+            if isinstance(value, str):
+                # 群名等外部文本按原文导出，不能被 Excel 当作公式执行。
+                cell.data_type = "s"
+            cells.append(cell)
+        ws.append(cells)
+    ws.auto_filter.ref = f"A1:H{len(payload['rows']) + 1}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    filename = f"群列表_{datetime.now(SHANGHAI):%Y%m%d}.xlsx"
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename*=UTF-8''" + quote(filename)},
+    )
 
 
 @app.route("/api/groups/keyword")
